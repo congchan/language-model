@@ -1,6 +1,7 @@
 import os
-import torch
-
+from mxnet import nd
+import numpy as np
+import mxnet as mx
 from collections import Counter
 
 
@@ -31,7 +32,7 @@ class Corpus(object):
         self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
         self.test = self.tokenize(os.path.join(path, 'test.txt'))
 
-    def tokenize(self, path):
+    def tokenize(self, path, ctx=None):
         """Tokenizes a text file."""
         assert os.path.exists(path)
         # Add words to the dictionary
@@ -45,7 +46,7 @@ class Corpus(object):
 
         # Tokenize file content
         with open(path, 'r', encoding='utf-8') as f:
-            ids = torch.LongTensor(tokens)
+            ids = nd.empty(tokens, ctx, dtype=np.int64)
             token = 0
             for line in f:
                 words = line.split() + ['<eos>']
@@ -62,7 +63,7 @@ class SentCorpus(object):
         self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
         self.test = self.tokenize(os.path.join(path, 'test.txt'))
 
-    def tokenize(self, path):
+    def tokenize(self, path, ctx=None):
         """Tokenizes a text file."""
         assert os.path.exists(path)
         # Add words to the dictionary
@@ -81,7 +82,7 @@ class SentCorpus(object):
                 if not line:
                     continue
                 words = line.split() + ['<eos>']
-                sent = torch.LongTensor(len(words))
+                sent = nd.empty(len(words), ctx, dtype=np.int64)
                 for i, word in enumerate(words):
                     sent[i] = self.dictionary.word2idx[word]
                 sents.append(sent)
@@ -89,13 +90,14 @@ class SentCorpus(object):
         return sents
 
 class BatchSentLoader(object):
-    def __init__(self, sents, batch_size, pad_id=0, cuda=False, volatile=False):
+    def __init__(self, sents, batch_size, pad_id=0, cuda=False, volatile=False, ctx=None):
         self.sents = sents
         self.batch_size = batch_size
         self.sort_sents = sorted(sents, key=lambda x: x.size(0))
         self.cuda = cuda
         self.volatile = volatile
         self.pad_id = pad_id
+        self.ctx = ctx
 
     def __next__(self):
         if self.idx >= len(self.sort_sents):
@@ -104,7 +106,7 @@ class BatchSentLoader(object):
         batch_size = min(self.batch_size, len(self.sort_sents)-self.idx)
         batch = self.sort_sents[self.idx:self.idx+batch_size]
         max_len = max([s.size(0) for s in batch])
-        tensor = torch.LongTensor(max_len, batch_size).fill_(self.pad_id)
+        tensor = mx.nd.full((max_len, batch_size), self.pad_id, self.ctx, dtype=np.int64)
         for i in range(len(batch)):
             s = batch[i]
             tensor[:s.size(0),i].copy_(s)
@@ -114,7 +116,7 @@ class BatchSentLoader(object):
         self.idx += batch_size
 
         return tensor
-    
+
     next = __next__
 
     def __iter__(self):
