@@ -48,27 +48,6 @@ class DataLoader(object):
         return len(self.dataset)//self.batch_size
 
 
-def load_data_fashion_mnist(batch_size, resize=None, root="~/.mxnet/datasets/fashion-mnist"):
-    """download the fashion mnist dataest and then load into memory"""
-    def transform_mnist(data, label):
-        # Transform a batch of examples.
-        if resize:
-            n = data.shape[0]
-            new_data = nd.zeros((n, resize, resize, data.shape[3]))
-            for i in range(n):
-                new_data[i] = image.imresize(data[i], resize, resize)
-            data = new_data
-        # change data from batch x height x width x channel to batch x channel x height x width
-        return nd.transpose(data.astype('float32'), (0,3,1,2))/255, label.astype('float32')
-
-    mnist_train = gluon.data.vision.FashionMNIST(root=root, train=True, transform=None)
-    mnist_test = gluon.data.vision.FashionMNIST(root=root, train=False, transform=None)
-    # Transform later to avoid memory explosion.
-    train_data = DataLoader(mnist_train, batch_size, shuffle=True, transform=transform_mnist)
-    test_data = DataLoader(mnist_test, batch_size, shuffle=False, transform=transform_mnist)
-    return (train_data, test_data)
-
-
 def try_gpu():
     """If GPU is available, return mx.gpu(0); else return mx.cpu()"""
     try:
@@ -105,20 +84,6 @@ def accuracy(y_hat, y):
     return (y_hat.argmax(axis=1) == y).mean().asscalar()
 
 
-def _get_batch(batch, ctx):
-    """return features and labels on ctx"""
-    if isinstance(batch, mx.io.DataBatch):
-        features = batch.data[0]
-        labels = batch.label[0]
-    else:
-        features, labels = batch
-    if labels.dtype != features.dtype:
-        labels = labels.astype(features.dtype)
-    return (gutils.split_and_load(features, ctx),
-            gutils.split_and_load(labels, ctx),
-            features.shape[0])
-
-
 def evaluate_accuracy(data_iter, net, ctx=[mx.cpu()]):
     """Evaluate accuracy of a model on the given data set."""
     if isinstance(ctx, mx.Context):
@@ -135,115 +100,6 @@ def evaluate_accuracy(data_iter, net, ctx=[mx.cpu()]):
             n += y.size
         acc.wait_to_read()
     return acc.asscalar() / n
-
-
-def train_cpu(net, train_iter, test_iter, loss, num_epochs, batch_size,
-              params=None, lr=None, trainer=None):
-    """Train and evaluate a model on CPU."""
-    for epoch in range(1, num_epochs + 1):
-        train_l_sum = 0
-        train_acc_sum = 0
-        for X, y in train_iter:
-            with autograd.record():
-                y_hat = net(X)
-                l = loss(y_hat, y)
-            l.backward()
-            if trainer is None:
-                sgd(params, lr, batch_size)
-            else:
-                trainer.step(batch_size)
-            train_l_sum += l.mean().asscalar()
-            train_acc_sum += accuracy(y_hat, y)
-        test_acc = evaluate_accuracy(test_iter, net)
-        print("epoch %d, loss %.4f, train acc %.3f, test acc %.3f"
-              % (epoch, train_l_sum / len(train_iter),
-                 train_acc_sum / len(train_iter), test_acc))
-
-
-def train(train_iter, test_iter, net, loss, trainer, ctx, num_epochs, print_batches=None):
-    """Train and evaluate a model."""
-    print("training on", ctx)
-    if isinstance(ctx, mx.Context):
-        ctx = [ctx]
-    for epoch in range(1, num_epochs + 1):
-        train_l_sum, train_acc_sum, n, m = 0.0, 0.0, 0.0, 0.0
-        if isinstance(train_iter, mx.io.MXDataIter):
-            train_iter.reset()
-        start = time()
-        for i, batch in enumerate(train_iter):
-            Xs, ys, batch_size = _get_batch(batch, ctx)
-            ls = []
-            with autograd.record():
-                y_hats = [net(X) for X in Xs]
-                ls = [loss(y_hat, y) for y_hat, y in zip(y_hats, ys)]
-            for l in ls:
-                l.backward()
-            train_acc_sum += sum([(y_hat.argmax(axis=1) == y).sum().asscalar()
-                                 for y_hat, y in zip(y_hats, ys)])
-            train_l_sum += sum([l.sum().asscalar() for l in ls])
-            trainer.step(batch_size)
-            n += batch_size
-            m += sum([y.size for y in ys])
-            if print_batches and (i+1) % print_batches == 0:
-                print("batch %d, loss %f, train acc %f" % (
-                    n, train_l_sum / n, train_acc_sum / m
-                ))
-        test_acc = evaluate_accuracy(test_iter, net, ctx)
-        print("epoch %d, loss %.4f, train acc %.3f, test acc %.3f, time %.1f sec" % (
-            epoch, train_l_sum / n, train_acc_sum / m, test_acc, time() - start
-        ))
-
-
-class Residual(nn.HybridBlock):
-    def __init__(self, channels, same_shape=True, **kwargs):
-        super(Residual, self).__init__(**kwargs)
-        self.same_shape = same_shape
-        with self.name_scope():
-            strides = 1 if same_shape else 2
-            self.conv1 = nn.Conv2D(channels, kernel_size=3, padding=1,
-                                  strides=strides)
-            self.bn1 = nn.BatchNorm()
-            self.conv2 = nn.Conv2D(channels, kernel_size=3, padding=1)
-            self.bn2 = nn.BatchNorm()
-            if not same_shape:
-                self.conv3 = nn.Conv2D(channels, kernel_size=1,
-                                      strides=strides)
-
-    def hybrid_forward(self, F, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        if not self.same_shape:
-            x = self.conv3(x)
-        return F.relu(out + x)
-
-def resnet18(num_classes):
-    net = nn.HybridSequential()
-    with net.name_scope():
-        net.add(
-            nn.BatchNorm(),
-            nn.Conv2D(64, kernel_size=3, strides=1),
-            nn.MaxPool2D(pool_size=3, strides=2),
-            Residual(64),
-            Residual(64),
-            Residual(128, same_shape=False),
-            Residual(128),
-            Residual(256, same_shape=False),
-            Residual(256),
-            nn.GlobalAvgPool2D(),
-            nn.Dense(num_classes)
-        )
-    return net
-
-def show_images(imgs, num_rows, num_cols, scale=2):
-    """plot a list of images"""
-    figsize = (num_cols*scale, num_rows*scale)
-    _, figs = plt.subplots(num_rows, num_cols, figsize=figsize)
-    for i in range(num_rows):
-        for j in range(num_cols):
-            figs[i][j].imshow(imgs[i*num_cols+j].asnumpy())
-            figs[i][j].axes.get_xaxis().set_visible(False)
-            figs[i][j].axes.get_yaxis().set_visible(False)
-    plt.show()
 
 
 def to_onehot(X, size):
@@ -293,7 +149,7 @@ def grad_clipping(params, theta, ctx):
         norm = norm.sqrt().asscalar()
         if norm > theta:
             for param in params:
-                param.grad[:] *= theta / norm 
+                param.grad[:] *= theta / norm
 
 
 def predict_rnn(rnn, prefix, num_chars, params, num_hiddens, vocab_size, ctx,
@@ -348,11 +204,11 @@ def train_and_predict_rnn(rnn, is_random_iter, num_epochs, num_steps,
             else:
                 state_h = state_h.detach()
                 if is_lstm:
-                    state_c = state_c.detach()       
+                    state_c = state_c.detach()
             with autograd.record():
                 if is_lstm:
                     outputs, state_h, state_c = rnn(
-                        get_inputs(X, vocab_size), state_h, state_c, *params) 
+                        get_inputs(X, vocab_size), state_h, state_c, *params)
                 else:
                     outputs, state_h = rnn(
                         get_inputs(X, vocab_size), state_h, *params)
@@ -428,4 +284,3 @@ def semilogy(x_vals, y_vals, x_label, y_label, x2_vals=None, y2_vals=None,
         plt.semilogy(x2_vals, y2_vals)
         plt.legend(legend)
     plt.show()
-
