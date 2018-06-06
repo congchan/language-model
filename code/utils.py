@@ -1,32 +1,29 @@
 import os, shutil
 import torch
-from torch.autograd import Variable
 
-def repackage_hidden(h):
-    """Wraps hidden states in new Variables, to detach them from their history."""
-    if type(h) == Variable:
-        return Variable(h.data)
+def detach(state):
+    if isinstance(state, (tuple, list)):
+        state = [i.detach() for i in state]
     else:
-        return tuple(repackage_hidden(v) for v in h)
+        state = state.detach()
+    return state
 
-def batchify(data, bsz, args):
-    # Work out how cleanly we can divide the dataset into bsz parts.
-    nbatch = data.size(0) // bsz
+
+def batchify(data, batch_size):
+    num_batches = data.shape[0] // batch_size
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
-    data = data.narrow(0, 0, nbatch * bsz)
+    data = data[:num_batches*batch_size]
     # Evenly divide the data across the bsz batches.
-    data = data.view(bsz, -1).t().contiguous()
-    print(data.size())
-    if args.cuda:
-        data = data.cuda()
+    data = data.reshape((batch_size, num_batches)).T
     return data
 
-def get_batch(source, i, args, seq_len=None, evaluation=False):
-    seq_len = min(seq_len if seq_len else args.bptt, len(source) - 1 - i)
-    data = Variable(source[i:i+seq_len], volatile=evaluation)
-    # target = Variable(source[i+1:i+1+seq_len].view(-1))
-    target = Variable(source[i+1:i+1+seq_len])
-    return data, target
+
+def get_batch(source, i, seq_len=None):
+    seq_len = min(seq_len if seq_len else args.bptt, source.shape[0]-1-i)
+    X = source[i : i+seq_len]
+    Y = source[i+1 : i+1+seq_len]
+    return X, Y.reshape((-1,))
+
 
 def create_exp_dir(path, scripts_to_save=None):
     if not os.path.exists(path):
@@ -39,10 +36,11 @@ def create_exp_dir(path, scripts_to_save=None):
             dst_file = os.path.join(path, 'scripts', os.path.basename(script))
             shutil.copyfile(script, dst_file)
 
-def save_checkpoint(model, optimizer, path, finetune=False):
+def save_checkpoint(model, trainer, path, finetune=False):
+    """Block support .save_params() and .load_params()"""
     if finetune:
-        torch.save(model, os.path.join(path, 'finetune_model.pt'))
-        torch.save(optimizer.state_dict(), os.path.join(path, 'finetune_optimizer.pt'))
+        model.save_params(os.path.join(path, 'finetune_model.params'))
+        trainer.save_states(os.path.join(path, 'finetune_trainer.states'))
     else:
-        torch.save(model, os.path.join(path, 'model.pt'))
-        torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
+        model.save_params(os.path.join(path, 'model.params'))
+        trainer.save_states(os.path.join(path, 'trainer.states'))
