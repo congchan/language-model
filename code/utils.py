@@ -50,3 +50,33 @@ def save_checkpoint(model, trainer, path, finetune=False):
     else:
         model.save_params(os.path.join(path, 'model.params'))
         trainer.save_states(os.path.join(path, 'trainer.states'))
+
+
+def get_params(params, ctx):
+    ''' Copy parameters to specific GPU
+    Usage: new_params = get_params(params, mx.gpu(0))'''
+    new_params = [p.copyto(ctx) for p in params]
+    for p in new_params:
+        p.attach_grad()
+    return new_params
+
+
+def allreduce(data):
+    '''reduce data from all GPU and broadcast
+    Usage:  data = [nd.ones((1,2), ctx=mx.gpu(i)) * (i + 1) for i in range(2)]
+            allreduce(data)'''
+    for i in range(1, len(data)):
+        data[0][:] += data[i].copyto(data[0].context)
+    for i in range(1, len(data)):
+        data[0].copyto(data[i])
+
+
+def split_and_load(data, ctx):
+    ''' Split data to each GPUs
+    Usage:  batch = nd.arange(24).reshape((6, 4))
+            ctx = [mx.gpu(0), mx.gpu(1)]
+            splitted = split_and_load(batch, ctx) '''
+    n, k = data.shape[0], len(ctx)
+    m = n // k
+    assert m * k == n, '# examples is not divided by # devices.'
+    return [data[i * m: (i + 1) * m].as_in_context(ctx[i]) for i in range(k)]
