@@ -59,10 +59,10 @@ def try_gpu():
 
 
 def try_all_gpus():
-    """Return all available GPUs, or [mx.gpu()] if there is no GPU"""
+    """Return all available GPUs, or [mx.cpu()] if there is no GPU"""
     ctxes = []
     try:
-        for i in range(16):
+        for i in range(8):
             ctx = mx.gpu(i)
             _ = nd.array([0], ctx=ctx)
             ctxes.append(ctx)
