@@ -33,7 +33,7 @@ class Corpus(object):
         self.test = self.tokenize(os.path.join(path, 'test.txt'))
 
     def tokenize(self, path, ctx=None):
-        """Tokenizes a text file."""
+        """ Tokenizes a text file into a list of indexes of tokens."""
         assert os.path.exists(path)
         # Add words to the dictionary
         with open(path, 'r', encoding='utf-8') as f:

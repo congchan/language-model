@@ -10,6 +10,11 @@ def detach(state):
 
 
 def batchify(data, batch_size):
+    '''Reshape the index list into matrix of shape(num_batches, batch_size)
+    [[ 0.  4.  8.]
+    [ 1.  5.  9.]
+    [ 2.  6. 10.]
+    [ 3.  7. 11.]]'''
     num_batches = data.shape[0] // batch_size
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     data = data[:num_batches*batch_size]
@@ -19,6 +24,7 @@ def batchify(data, batch_size):
 
 
 def get_batch(source, i, seq_len=None):
+    ''''input: a batchify data source. '''
     seq_len = min(seq_len if seq_len else args.bptt, source.shape[0]-1-i)
     X = source[i : i+seq_len]
     Y = source[i+1 : i+1+seq_len]
