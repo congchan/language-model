@@ -1,314 +1,275 @@
-import argparse
-import os, sys
-import time
-import math
+import math, time, argparse, os, sys, logging, gluonnlp, mxnet
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.autograd import Variable
+import data, model, utils
+import gluon_utils as gu
+from mxnet import gluon, nd, init, autograd
+from utils import batchify, get_batch, detach, create_exp_dir, save_checkpoint
 
-import gc
+def parse_args():
+    parser = argparse.ArgumentParser(description='PennTreeBank/WikiText2 RNN/LSTM Language Model')
+    parser.add_argument('--data', type=str, default='penn',
+                        help='which data corpus')
+    parser.add_argument('--model', type=str, default='Mos',
+                        help='Model, options (MOS, StandardRNN, AWDRNN)')
+    parser.add_argument('--exprm', type=str, default='',
+                        help='experiment suffix')
+    parser.add_argument('--rnn_cell', type=str, default='LSTM',
+                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
+    parser.add_argument('--emb_size', type=int, default=400,
+                        help='size of word embeddings')
+    parser.add_argument('--hid_size', type=int, default=1150,
+                        help='number of hidden units per layer')
+    parser.add_argument('--last_hid_size', type=int, default=-1,
+                        help='number of hidden units for the last rnn layer')
+    parser.add_argument('--n_layers', type=int, default=3,
+                        help='number of layers')
+    parser.add_argument('--lr', type=float, default=30,
+                        help='initial learning rate')
+    parser.add_argument('--clip', type=float, default=0.25,
+                        help='gradient clipping')
+    parser.add_argument('--epochs', type=int, default=8000,
+                        help='upper epoch limit')
+    parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+                        help='batch size')
+    parser.add_argument('--bptt', type=int, default=70,
+                        help='sequence length')
+    parser.add_argument('--dropout', type=float, default=0.4,
+                        help='dropout applied to layers (0 = no dropout)')
+    parser.add_argument('--drop_h', type=float, default=0.3,
+                        help='dropout for rnn layers (0 = no dropout)')
+    parser.add_argument('--drop_i', type=float, default=0.65,
+                        help='dropout for input embedding layers (0 = no dropout)')
+    parser.add_argument('--drop_e', type=float, default=0.1,
+                        help='dropout to remove words from embedding layer (0 = no dropout)')
+    parser.add_argument('--drop_l', type=float, default=-0.2,
+                        help='dropout applied to layers (0 = no dropout)')
+    parser.add_argument('--w_drop', type=float, default=0.5,
+                        help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
+    parser.add_argument('--tied', action='store_false',
+                        help='tie the word embedding and softmax weights')
+    parser.add_argument('--seed', type=int, default=1111,
+                        help='random seed')
+    parser.add_argument('--nonmono', type=int, default=5,
+                        help='random seed')
+    parser.add_argument('--cuda', action='store_false',
+                        help='use CUDA')
+    parser.add_argument('--log-interval', type=int, default=200, metavar='N',
+                        help='report interval')
+    parser.add_argument('--save', type=str,  default='Experiments',
+                        help='path to save the final model')
+    parser.add_argument('--alpha', type=float, default=2,
+                        help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
+    parser.add_argument('--beta', type=float, default=1,
+                        help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
+    parser.add_argument('--wdecay', type=float, default=1.2e-6,
+                        help='weight decay applied to all weights')
+    parser.add_argument('--continue_train', action='store_true',
+                        help='continue train from a checkpoint')
+    parser.add_argument('--n_experts', type=int, default=10,
+                        help='number of experts')
+    parser.add_argument('--small_batch_size', type=int, default=-1,
+                        help='the batch size for computation. batch_size should be divisible by small_batch_size.\
+                         In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
+                         until batch_size is reached. An update step is then performed.')
+    parser.add_argument('--max_seq_len_delta', type=int, default=40,
+                        help='max sequence length')
+    parser.add_argument('--single_gpu', default=False, action='store_true',
+                        help='use single GPU')
+    args = parser.parse_args()
+    return args
 
-import data
-import model
+if __name__ == "__main__":
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+    args = parse_args()
+    if not args.continue_train:
+        path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
 
-parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./penn/',
-                    help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
-parser.add_argument('--emsize', type=int, default=400,
-                    help='size of word embeddings')
-parser.add_argument('--nhid', type=int, default=1150,
-                    help='number of hidden units per layer')
-parser.add_argument('--nhidlast', type=int, default=-1,
-                    help='number of hidden units for the last rnn layer')
-parser.add_argument('--nlayers', type=int, default=3,
-                    help='number of layers')
-parser.add_argument('--lr', type=float, default=30,
-                    help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.25,
-                    help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=8000,
-                    help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=20, metavar='N',
-                    help='batch size')
-parser.add_argument('--bptt', type=int, default=70,
-                    help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.4,
-                    help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--dropouth', type=float, default=0.3,
-                    help='dropout for rnn layers (0 = no dropout)')
-parser.add_argument('--dropouti', type=float, default=0.65,
-                    help='dropout for input embedding layers (0 = no dropout)')
-parser.add_argument('--dropoute', type=float, default=0.1,
-                    help='dropout to remove words from embedding layer (0 = no dropout)')
-parser.add_argument('--dropoutl', type=float, default=-0.2,
-                    help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--wdrop', type=float, default=0.5,
-                    help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
-parser.add_argument('--tied', action='store_false',
-                    help='tie the word embedding and softmax weights')
-parser.add_argument('--seed', type=int, default=1111,
-                    help='random seed')
-parser.add_argument('--nonmono', type=int, default=5,
-                    help='random seed')
-parser.add_argument('--cuda', action='store_false',
-                    help='use CUDA')
-parser.add_argument('--log-interval', type=int, default=200, metavar='N',
-                    help='report interval')
-parser.add_argument('--save', type=str,  default='EXP',
-                    help='path to save the final model')
-parser.add_argument('--alpha', type=float, default=2,
-                    help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
-parser.add_argument('--beta', type=float, default=1,
-                    help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
-parser.add_argument('--wdecay', type=float, default=1.2e-6,
-                    help='weight decay applied to all weights')
-parser.add_argument('--continue_train', action='store_true',
-                    help='continue train from a checkpoint')
-parser.add_argument('--n_experts', type=int, default=10,
-                    help='number of experts')
-parser.add_argument('--small_batch_size', type=int, default=-1,
-                    help='the batch size for computation. batch_size should be divisible by small_batch_size.\
-                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
-                     until batch_size is reached. An update step is then performed.')
-parser.add_argument('--max_seq_len_delta', type=int, default=40,
-                    help='max sequence length')
-parser.add_argument('--single_gpu', default=False, action='store_true', 
-                    help='use single GPU')
-args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO,
+                        handlers = [
+                            logging.StreamHandler(),
+                            logging.FileHandler(os.path.join(path, "log.log"))
+                        ])
 
-if args.nhidlast < 0:
-    args.nhidlast = args.emsize
-if args.dropoutl < 0:
-    args.dropoutl = args.dropouth
-if args.small_batch_size < 0:
-    args.small_batch_size = args.batch_size
+    ctxs = gu.try_all_gpus()
+    logging.info('Computation on: {}'.format(ctxs))
 
-if not args.continue_train:
-    args.save = '{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
-    create_exp_dir(args.save, scripts_to_save=['main.py', 'model.py'])
+    if args.last_hid_size < 0:
+        args.last_hid_size = args.emb_size
+    if args.drop_l < 0:
+        args.drop_l = args.drop_h
+    if args.small_batch_size < 0:
+        args.small_batch_size = args.batch_size
 
-def logging(s, print_=True, log_=True):
-    if print_:
-        print(s)
-    if log_:
-        with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
-            f_log.write(s + '\n')
 
-# Set the random seed manually for reproducibility.
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+    # Set the random seed manually for reproducibility.
+    np.random.seed(args.seed)
+    mxnet.random.seed(args.seed)
+
+    ###############################################################################
+    # Load data
+    ###############################################################################
+
+    corpus = data.Corpus(args.data)
+
+    eval_batch_size = 10
+    test_batch_size = 1
+    train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs)
+    val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs)
+    test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs)
+
+    ###############################################################################
+    # Build the model
+    ###############################################################################
+    '''Model parameters aved path: /train/experiment/model.params.
+    If parameters exists, load the saved parameters, else initialize'''
+
+    ntokens = len(corpus.dictionary)
+
+    params = os.path.join(path, 'model.params')
+
+    if args.model == 'MOS':
+        model = model.MOS(args.rnn_cell, ntokens, args.emb_size, args.hid_size, args.last_hid_size, args.nlayers,
+                           args.dropout, args.drop_h, args.drop_i, args.drop_e, args.w_drop,
+                           args.tied, args.drop_l, args.n_experts)
+    elif args.model == 'AWDRNN':
+        model = model.AWDRNN(args.rnn_cell, ntokens, args.emb_size, args.hid_size, args.n_layers,
+                     tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
+                     drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
+    elif args.model == 'StandardRNN':
+        model = gluonnlp.model.StandardRNN(args.rnn_cell, ntokens, args.emb_size, args.hid_size,
+                                        args.n_layers, dropout=args.dropout, tie_weights=args.tied)
+
+
+    if os.path.exists(params) and os.path.isfile(params) and os.path.getsize(params)>0:
+        model.load_params(params, ctx=ctxs)
+        logging.info("Loaded parameters from : {}".format(params))
     else:
-        torch.cuda.manual_seed_all(args.seed)
+        model.initialize(init.Xavier(), ctx=ctxs)
 
-###############################################################################
-# Load data
-###############################################################################
+    trainer = gluon.Trainer(model.collect_params(), 'sgd',
+                            {'learning_rate': lr, 'momentum': 0, 'wd': 0})
 
-corpus = data.Corpus(args.data)
+    loss = gluon.loss.SoftmaxCrossEntropyLoss()
 
-eval_batch_size = 10
-test_batch_size = 1
-train_data = batchify(corpus.train, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
+    train()
+    #total_params = sum(x.data.nelement() for x in model.parameters())
+    #logging('Args: {}'.format(args))
+    #logging('Model total parameters: {}'.format(total_params))
 
-###############################################################################
-# Build the model
-###############################################################################
-
-ntokens = len(corpus.dictionary)
-if args.continue_train:
-    model = torch.load(os.path.join(args.save, 'model.pt'))
-else:
-    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers, 
-                       args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop, 
-                       args.tied, args.dropoutl, args.n_experts)
-
-if args.cuda:
-    if args.single_gpu:
-        parallel_model = model.cuda()
-    else:
-        parallel_model = nn.DataParallel(model, dim=1).cuda()
-else:
-    parallel_model = model
-
-total_params = sum(x.data.nelement() for x in model.parameters())
-logging('Args: {}'.format(args))
-logging('Model total parameters: {}'.format(total_params))
-
-criterion = nn.CrossEntropyLoss()
-
-###############################################################################
-# Training code
-###############################################################################
 
 def evaluate(data_source, batch_size=10):
-    # Turn on evaluation mode which disables dropout.
-    model.eval()
-    total_loss = 0
-    ntokens = len(corpus.dictionary)
-    hidden = model.init_hidden(batch_size)
-    for i in range(0, data_source.size(0) - 1, args.bptt):
-        data, targets = get_batch(data_source, i, args, evaluation=True)
-        targets = targets.view(-1)
-
-        log_prob, hidden = parallel_model(data, hidden)
-        loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), targets).data
-
-        total_loss += loss * len(data)
-
-        hidden = repackage_hidden(hidden)
-    return total_loss[0] / len(data_source)
-
+    '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
+    cost_sum = nd.array([0], ctx=ctxs)
+    n = 0
+    state = model.begin_state(func=nd.zeros, batch_size=batch_size, ctx=ctxs)
+    for i in range(0, data_source.shape[0] - 1, args.bptt):
+        X, Y = get_batch(data_source, i)
+        output, state = model(X, state)
+        # cost tensor with shape (batch_size,).
+        # Dimenions other than batch_axis are averaged out.
+        cost = loss(output, Y)
+        cost_sum += cost.sum()
+        n += cost.size
+    return cost_sum / n
 
 def train():
-    assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
+    '''If gluon trainer recognizes multi-devices,
+    it will automatically aggregate the gradients and synchronize the parameters.'''
 
-    # Turn on training mode which enables dropout.
-    total_loss = 0
-    start_time = time.time()
-    ntokens = len(corpus.dictionary)
-    hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
-    batch, i = 0, 0
-    while i < train_data.size(0) - 1 - 1:
-        bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
-        # Prevent excessively small or negative sequence lengths
-        seq_len = max(5, int(np.random.normal(bptt, 5)))
-        # There's a very small chance that it could select a very long sequence length resulting in OOM
-        seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
+    assert (len(ctxs) == num_gpus or num_gpus == 0), '# of GPUs not matched!'
 
-        lr2 = optimizer.param_groups[0]['lr']
-        optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
-        model.train()
-        data, targets = get_batch(train_data, i, args, seq_len=seq_len)
+    model.initialize(init=init.Normal(sigma=0.01), ctx=ctxs, force_reinit=True)
+    trainer = gluon.Trainer(
+        net.collect_params(), 'sgd', {'learning_rate': lr})
 
-        optimizer.zero_grad()
-
-        start, end, s_id = 0, args.small_batch_size, 0
-        while start < args.batch_size:
-            cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
-
-            # Starting each batch, we detach the hidden state from how it was previously produced.
-            # If we didn't, the model would try backpropagating all the way to start of the dataset.
-            hidden[s_id] = repackage_hidden(hidden[s_id])
-
-            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
-            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
-
-            loss = raw_loss
-            # Activiation Regularization
-            loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
-            # Temporal Activation Regularization (slowness)
-            loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
-            loss *= args.small_batch_size / args.batch_size
-            total_loss += raw_loss.data * args.small_batch_size / args.batch_size
-            loss.backward()
-
-            s_id += 1
-            start = end
-            end = start + args.small_batch_size
-
-            gc.collect()
-
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        optimizer.step()
-
-        # total_loss += raw_loss.data
-        optimizer.param_groups[0]['lr'] = lr2
-        if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss[0] / args.log_interval
-            elapsed = time.time() - start_time
-            logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
-            total_loss = 0
-            start_time = time.time()
-        ###
-        batch += 1
-        i += seq_len
-
-# Loop over epochs.
-lr = args.lr
-best_val_loss = []
-stored_loss = 100000000
-
-# At any point you can hit Ctrl + C to break out of training early.
-try:
-    if args.continue_train:
-        optimizer_state = torch.load(os.path.join(args.save, 'optimizer.pt'))
-        if 't0' in optimizer_state['param_groups'][0]:
-            optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-        else:
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
-        optimizer.load_state_dict(optimizer_state)
-    else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
-
-    for epoch in range(1, args.epochs+1):
-        epoch_start_time = time.time()
-        train()
-        if 't0' in optimizer.param_groups[0]:
-            tmp = {}
-            for prm in model.parameters():
-                tmp[prm] = prm.data.clone()
-                prm.data = optimizer.state[prm]['ax'].clone()
-
-            val_loss2 = evaluate(val_data)
-            logging('-' * 89)
-            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                               val_loss2, math.exp(val_loss2)))
-            logging('-' * 89)
-
-            if val_loss2 < stored_loss:
-                save_checkpoint(model, optimizer, args.save)
-                logging('Saving Averaged!')
-                stored_loss = val_loss2
-
-            for prm in model.parameters():
-                prm.data = tmp[prm].clone()
-
-        else:
+    # Loop over epochs.
+    bess_loss = float("Inf")
+    # At any point you can hit Ctrl + C to break out of training early.
+    try:
+        for epoch in range(1, args.epochs+1):
+            tic = time.time()
+            epoch_train()
             val_loss = evaluate(val_data, eval_batch_size)
+
             logging('-' * 89)
             logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - tic),
                                                val_loss, math.exp(val_loss)))
             logging('-' * 89)
 
-            if val_loss < stored_loss:
-                save_checkpoint(model, optimizer, args.save)
+            if val_loss < bess_loss:
+                save_checkpoint(model, trainer, path)
                 logging('Saving Normal!')
-                stored_loss = val_loss
+                bess_loss = val_loss
 
-            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
-                logging('Switching!')
-                optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-                #optimizer.param_groups[0]['lr'] /= 2.
-            best_val_loss.append(val_loss)
+    except KeyboardInterrupt:
+        logging('-' * 89)
+        logging('Exiting from training early')
 
-except KeyboardInterrupt:
-    logging('-' * 89)
-    logging('Exiting from training early')
+def epoch_train():
+    ''' Train all the batches within one epoch'''
 
-# Load the best saved model.
-model = torch.load(os.path.join(args.save, 'model.pt'))
-parallel_model = nn.DataParallel(model, dim=1).cuda()
+    total_loss = nd.array([0], ctx=ctxs)
+    costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
+    m = batch_size // len(ctxs)
+    state = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
+    # state = nd.zeros(shape=(args.batch_size, args.hid_size), ctx=ctxs) # （bsz, hidden_size)
 
-# Run on test data.
-test_loss = evaluate(test_data, test_batch_size)
-logging('=' * 89)
-logging('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-    test_loss, math.exp(test_loss)))
-logging('=' * 89)
+    ############################################################################
+    # Loop all batches
+    batch, i = 0, 0
+    while i < train_data.shape(0) - 1 - 1:
+        #######################################################################
+        # Control seq_len cited from origin paper
+        bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
+        # Normal distribution (mean, variance): Prevent extreme sequence lengths
+        seq_len = max(5, int(np.random.normal(bptt, 5))) #
+        # There's a very small chance that it could select a very long sequence length resulting in OOM
+        seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
+        ########################################################################
+
+        # Schedual learning rate
+        trainer.set_learning_rate(trainer.learning_rate * seq_len / args.bptt)
+
+        '''Each batch shape(seq_len, batch_size), split data to each device.
+        m is the # of samples for each device, devided along batch_size axis.'''
+        Xs, Ys = get_batch(train_data, i, args, seq_len=seq_len)
+        assert args.batch_size == Xs.shape[1], 'data shape[1] should be batch_size'
+        Xs = gluon.utils.split_and_load(Xs, ctxs, 1)
+        Ys = gluon.utils.split_and_load(Ys, ctxs, 1)
+        tic_b = time.time()
+
+        # Starting each batch, we detach the hidden state from how it was previously produced.
+        # If we didn't, the model would try backpropagating all the way to start of the dataset.
+        # state = detach(state)
+
+        for i, X in enumerate(Xs):
+            with autograd.record(): # train_mode
+                 output, state[i] = model(X, state[i].detach()) # state（n_layers, bsz, hidden_size)
+                 costs[i]= loss(output, Ys[i]).sum() / (seq_len * m)  # loss (seq_len * m,)
+
+        for c in costs:
+            c.backward()
+
+        # 梯度裁剪。需要注意的是，这里的梯度是整个批量的梯度。
+        # 因此我们将 clipping_theta 乘以 seq_len 和 batch_size。
+        grads = [p.grad(ctx) for ctx in ctxs for p in model.collect_params().values()]
+        gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len * batch_size)
+        trainer.step(batch_size)
+
+        total_loss += sum(costs).asscalar() # this will synchronize all GPUs
+        if batch % args.log_interval == 0 and batch > 0:
+            cur_loss = total_loss / args.log_interval
+            logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+                    'loss {:5.2f} | ppl {:8.2f}'.format(
+                epoch, batch, len(train_data) // args.bptt, trainer.learning_rate,
+                (time.time() - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+            total_loss = 0
+            tic_b = time.time()
+
+        batch += 1
+        i += seq_len
+
+    nd.waitall()
+    ############################################################################
