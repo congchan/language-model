@@ -10,11 +10,11 @@ def detach(state):
 
 
 def batchify(data, batch_size):
-    '''Reshape the index list into matrix of shape(num_batches, batch_size)
-    [[ 0.  4.  8.]
-    [ 1.  5.  9.]
-    [ 2.  6. 10.]
-    [ 3.  7. 11.]]'''
+    '''Work out how cleanly we can divide the dataset into bsz parts.
+    By reshaping the index list into seq order major batch(num_batches, batch_size)
+    [[ 0.  3.  6.  9. 12. 15.]
+     [ 1.  4.  7. 10. 13. 16.]
+     [ 2.  5.  8. 11. 14. 17.]]'''
     num_batches = data.shape[0] // batch_size
     # Trim off any extra elements that wouldn't cleanly fit (remainders).
     data = data[:num_batches*batch_size]
@@ -24,16 +24,24 @@ def batchify(data, batch_size):
 
 
 def get_batch(source, i, seq_len=None):
-    ''''input: a batchify data source. '''
+    ''' seq_len acts as random shuffler, and introduces random sequence length
+    input: a batchify data source.
+    return: data(seq_len, batch_size)
+    '''
     seq_len = min(seq_len if seq_len else args.bptt, source.shape[0]-1-i)
     X = source[i : i+seq_len]
     Y = source[i+1 : i+1+seq_len]
     return X, Y.reshape((-1,))
 
+def make_dir(path):
+    make_path = os.path.join(*path)
+    if not os.path.exists(make_path):
+        os.makedirs(make_path)
+    return make_path
 
 def create_exp_dir(path, scripts_to_save=None):
     if not os.path.exists(path):
-        os.mkdir(path)
+        os.makedirs(path)
 
     print('Experiment dir : {}'.format(path))
     if scripts_to_save is not None:
@@ -71,12 +79,19 @@ def allreduce(data):
         data[0].copyto(data[i])
 
 
-def split_and_load(data, ctx):
-    ''' Split data to each GPUs
-    Usage:  batch = nd.arange(24).reshape((6, 4))
-            ctx = [mx.gpu(0), mx.gpu(1)]
-            splitted = split_and_load(batch, ctx) '''
-    n, k = data.shape[0], len(ctx)
+def split_and_load(data, ctx, batch_axis=1):
+    ''' Split data(seq_len, batch_size) into len(ctx_list) slices along batch_axis to each GPUs.
+    Usage:  ctx = [mx.gpu(0), mx.gpu(1)]
+            splitted = split_and_load(data, ctx) '''
+    n, k = data.shape[batch_axis], len(ctx)
     m = n // k
     assert m * k == n, '# examples is not divided by # devices.'
     return [data[i * m: (i + 1) * m].as_in_context(ctx[i]) for i in range(k)]
+
+def get_mem():
+    ''' Monitor memory usage, only works in Linux or MacOS
+    Usage: start = get_mem()
+            ...
+           get_mem() - start '''
+    res = subprocess.check_output(['ps', 'u', '-p', str(os.getpid())])
+    return int(str(res).split()[15]) / 1e3
