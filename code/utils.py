@@ -1,5 +1,4 @@
-import os, shutil
-import torch
+import os, json, csv
 
 def detach(state):
     if isinstance(state[0], (tuple, list)):
@@ -76,6 +75,17 @@ def read_config(file):
         config = json.load(configfile)
 
     return config
+
+
+def save_info(results, file):
+    ''' save the logging info to csv file'''
+    with open(file, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=',', dialect='excel')
+        if isinstance(results[0], list):
+            writer.writerows(results)
+        else:
+            writer.writerow(results)
+        csvfile.close()
 
 
 def get_params(params, ctx):
