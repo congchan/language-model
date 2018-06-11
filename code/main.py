@@ -108,35 +108,27 @@ def train():
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
-    assert (len(ctxs) == num_gpus or num_gpus == 0), '# of GPUs not matched!'
-
-    model.initialize(init=init.Normal(sigma=0.01), ctx=ctxs, force_reinit=True)
-    trainer = gluon.Trainer(
-        net.collect_params(), 'sgd', {'learning_rate': lr})
-
     # Loop over epochs.
-    bess_loss = float("Inf")
+    best_loss = float("Inf")
     # At any point you can hit Ctrl + C to break out of training early.
     try:
-        for epoch in range(1, args.epochs+1):
+        for epoch in range(args.epochs):
             tic = time.time()
-            epoch_train()
+            train_one_epoch(epoch)
             val_loss = evaluate(val_data, eval_batch_size)
+            toc = time.time()
+            logging.info('-' * 89)
+            logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.3f} | '
+                    'valid ppl {:8.2f}'.format(epoch, toc - tic, val_loss, math.exp(val_loss)))
+            epoch_info.append([epoch, toc - tic, val_loss, math.exp(val_loss) ])
+            logging.info('-' * 89)
 
-            logging('-' * 89)
-            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                    'valid ppl {:8.2f}'.format(epoch, (time.time() - tic),
-                                               val_loss, math.exp(val_loss)))
-            logging('-' * 89)
-
-            if val_loss < bess_loss:
+            if val_loss < best_loss:
                 save_checkpoint(model, trainer, path)
-                logging('Saving Normal!')
-                bess_loss = val_loss
+                logging.info('Saving Normal!')
+                best_loss = val_loss
 
     except KeyboardInterrupt:
-        logging('-' * 89)
-        logging('Exiting from training early')
 
 def epoch_train():
     ''' Train all the batches within one epoch'''
