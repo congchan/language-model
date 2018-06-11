@@ -5,23 +5,26 @@ import gluon_utils as gu
 from mxnet import gluon, nd, init, autograd
 from utils import batchify, get_batch, detach, create_exp_dir, save_checkpoint
 
-def parse_args():
+def configuration():
+    '''Setting configuration'''
     parser = argparse.ArgumentParser(description='PennTreeBank/WikiText2 RNN/LSTM Language Model')
+    parser.add_argument('--continue_exprm', type=str, default=None,
+                        help='continue experiment from a checkpoint')
     parser.add_argument('--data', type=str, default='penn',
                         help='which data corpus')
     parser.add_argument('--model', type=str, default='Mos',
                         help='Model, options (MOS, StandardRNN, AWDRNN)')
     parser.add_argument('--exprm', type=str, default='',
                         help='experiment suffix')
-    parser.add_argument('--rnn_cell', type=str, default='LSTM',
-                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
+    parser.add_argument('--rnn_cell', type=str, default='lstm',
+                        help='type of recurrent net (rnn_tanh, rnn_relu, lstm, gru, sru)')
     parser.add_argument('--emb_size', type=int, default=400,
                         help='size of word embeddings')
     parser.add_argument('--hid_size', type=int, default=1150,
                         help='number of hidden units per layer')
     parser.add_argument('--last_hid_size', type=int, default=-1,
                         help='number of hidden units for the last rnn layer')
-    parser.add_argument('--n_layers', type=int, default=3,
+    parser.add_argument('--n_layers', type=int, default=1,
                         help='number of layers')
     parser.add_argument('--lr', type=float, default=30,
                         help='initial learning rate')
@@ -33,6 +36,8 @@ def parse_args():
                         help='batch size')
     parser.add_argument('--bptt', type=int, default=70,
                         help='sequence length')
+    parser.add_argument('--debug', type=int, default=0,
+                        help='debug mode sepcify the tokenize length for faster debugging')
     parser.add_argument('--dropout', type=float, default=0.4,
                         help='dropout applied to layers (0 = no dropout)')
     parser.add_argument('--drop_h', type=float, default=0.3,
@@ -51,8 +56,8 @@ def parse_args():
                         help='random seed')
     parser.add_argument('--nonmono', type=int, default=5,
                         help='random seed')
-    parser.add_argument('--cuda', action='store_false',
-                        help='use CUDA')
+    parser.add_argument('--cpu', action='store_true',
+                        help='use cpu only, default not')
     parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                         help='report interval')
     parser.add_argument('--save', type=str,  default='Experiments',
@@ -61,10 +66,10 @@ def parse_args():
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
+    parser.add_argument('--momentum', type=float, default=0.0,
+                        help='learning rate momentum')
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
-    parser.add_argument('--continue_train', action='store_true',
-                        help='continue train from a checkpoint')
     parser.add_argument('--n_experts', type=int, default=10,
                         help='number of experts')
     parser.add_argument('--small_batch_size', type=int, default=-1,
@@ -75,8 +80,9 @@ def parse_args():
                         help='max sequence length')
     parser.add_argument('--single_gpu', default=False, action='store_true',
                         help='use single GPU')
+    parser.add_argument('--clipping_theta', type=float, default=0.25,
+                        help='weight decay applied to all weights')
     args = parser.parse_args()
-    return args
 
 if __name__ == "__main__":
 
