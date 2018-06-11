@@ -73,7 +73,7 @@ class AWDRNN(Block):
         Dimension of embedding vectors.
     hidden_size : int
         Number of hidden units for RNN.
-    num_layers : int
+    n_layers : int
         Number of RNN layers.
     tie_weights : bool, default False
         Whether to tie the weight matrices of output dense layer and input embedding layer.
@@ -88,7 +88,7 @@ class AWDRNN(Block):
     drop_e : float
         Dropout rate to use on the embedding layer.
     """
-    def __init__(self, mode, vocab_size, embed_size, hidden_size, num_layers,
+    def __init__(self, mode, vocab_size, embed_size, hidden_size, n_layers,
                  tie_weights=False, dropout=0.5, weight_drop=0, drop_h=0.5, drop_i=0.5, drop_e=0,
                  **kwargs):
         super(AWDRNN, self).__init__(**kwargs)
@@ -96,7 +96,7 @@ class AWDRNN(Block):
         self._vocab_size = vocab_size
         self._embed_size = embed_size
         self._hidden_size = hidden_size
-        self._num_layers = num_layers
+        self._n_layers = n_layers
         self._dropout = dropout
         self._drop_h = drop_h
         self._drop_i = drop_i
@@ -124,10 +124,10 @@ class AWDRNN(Block):
     def _get_encoder(self):
         encoder = nn.Sequential()
         with encoder.name_scope():
-            for l in range(self._num_layers):
+            for l in range(self._n_layers):
                 encoder.add(_get_rnn_layer(self._mode, 1, self._embed_size if l == 0 else
                                            self._hidden_size, self._hidden_size if
-                                           l != self._num_layers - 1 or not self._tie_weights
+                                           l != self._n_layers - 1 or not self._tie_weights
                                            else self._embed_size, 0, self._weight_drop))
         return encoder
 
