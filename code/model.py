@@ -1,11 +1,59 @@
 import os
 import warnings
+import mxnet
 
-from mxnet.gluon.model_zoo.model_store import get_model_file
-from mxnet import init, nd, cpu, autograd
-from mxnet.gluon import nn, Block
-from mxnet.gluon.model_zoo import model_store
+from mxnet import init, nd, cpu, autograd, gluon
+from mxnet.gluon import nn, Block, rnn
 from gluonnlp.model.utils import apply_weight_drop, _get_rnn_layer
+
+class RNN(gluon.Block):
+    ''' Vanilla RNN, modified version from
+    https://zh.gluon.ai/chapter_recurrent-neural-networks/rnn-gluon.html'''
+
+    def __init__(self, vocab_size, args, **kwargs):
+        super(RNN, self).__init__(**kwargs)
+
+        with self.name_scope():
+            self.dropout = nn.Dropout(args.dropout)
+            self.embedding = nn.HybridSequential()
+            self.embedding.add(nn.Embedding(vocab_size, args.emb_size,
+                                    weight_initializer = mxnet.init.Uniform(0.1)))
+
+            self.decoder = nn.HybridSequential()
+            if args.tied:
+                ''' Optionally tie weights as in:
+                "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
+                https://arxiv.org/abs/1608.05859
+                and
+                "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
+                https://arxiv.org/abs/1611.01462
+                When using the tied weight, hid_size must be equal to emb_size
+                '''
+                # output tensor (sequence_length, batch_size, num_hidden) when layout is “TNC”
+                self.encoder = rnn.LSTM(args.hid_size, args.n_layers)
+
+                self.in_units = args.emb_size
+                self.decoder.add(nn.Dense(vocab_size, flatten=False,
+                                            in_units=self.in_units,
+                                            params=self.embedding[0].params))
+            else:
+                self.encoder = rnn.LSTM(args.emb_size, args.n_layers)
+                self.in_units = args.last_hid_size
+                self.decoder.add(nn.Dense(vocab_size, flatten=False,
+                                            in_units=self.in_units))
+
+
+    def forward(self, inputs, state):
+        embedding = self.dropout(self.embedding(inputs))
+        output, state = self.encoder(embedding, state)
+        output = self.dropout(output)
+        # since flatten=False require input data shape (..., in_units).
+        output = self.decoder(output)
+        return output, state
+
+    def begin_state(self, *args, **kwargs):
+        return self.encoder.begin_state(*args, **kwargs)
+
 
 
 class AWDRNN(Block):
