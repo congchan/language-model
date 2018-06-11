@@ -4,6 +4,10 @@ import numpy as np
 import mxnet as mx
 from collections import Counter
 
+class Config(object):
+    def __init__(self, config):
+        self.__dict__.update(config)
+
 
 class Dictionary(object):
     def __init__(self):
