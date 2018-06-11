@@ -5,8 +5,8 @@ import mxnet as mx
 from collections import Counter
 
 class Config(object):
-    def __init__(self, config):
-        self.__dict__.update(config)
+    def __init__(self, config_dict):
+        self.__dict__.update(config_dict)
 
 
 class Dictionary(object):
@@ -30,12 +30,14 @@ class Dictionary(object):
 
 
 class Corpus(object):
-    def __init__(self, data):
+    def __init__(self, data, debug=0):
         self.dictionary = Dictionary()
         path = os.path.join('data', data)
+        self.debug = debug
         self.train = self.tokenize(os.path.join(path, 'train.txt'))
         self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
         self.test = self.tokenize(os.path.join(path, 'test.txt'))
+
 
     def tokenize(self, path, ctx=None):
         """ Tokenizes a text file into a list of indexes of tokens."""
@@ -51,13 +53,15 @@ class Corpus(object):
 
         # Tokenize file content
         with open(path, 'r', encoding='utf-8') as f:
-            ids = nd.empty(tokens, ctx, dtype=np.int64)
+            ids = nd.empty(self.debug if self.debug else tokens , ctx, dtype=np.int64)
             token = 0
             for line in f:
                 words = line.split() + ['<eos>']
                 for word in words:
                     ids[token] = self.dictionary.word2idx[word]
                     token += 1
+                    if token >= self.debug:
+                        return ids
 
         return ids
 
