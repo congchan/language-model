@@ -25,7 +25,7 @@ def batchify(data, batch_size):
     return data
 
 
-def get_batch(source, i, seq_len=None):
+def get_batch(source, i, args, seq_len=None):
     ''' seq_len acts as random shuffler, and introduces random sequence length
     input: a batchify data source.
     return: data(seq_len, batch_size)
@@ -33,7 +33,7 @@ def get_batch(source, i, seq_len=None):
     seq_len = min(seq_len if seq_len else args.bptt, source.shape[0]-1-i)
     X = source[i : i+seq_len]
     Y = source[i+1 : i+1+seq_len]
-    return X, Y.reshape((-1,))
+    return X, Y
 
 def make_dir(path):
     make_path = os.path.join(*path)
