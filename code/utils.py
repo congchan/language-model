@@ -2,7 +2,9 @@ import os, shutil
 import torch
 
 def detach(state):
-    if isinstance(state, (tuple, list)):
+    if isinstance(state[0], (tuple, list)):
+        state = [ [i.detach() for i in s] for s in state]
+    elif isinstance(state, (tuple, list)):
         state = [i.detach() for i in state]
     else:
         state = state.detach()
