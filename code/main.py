@@ -84,84 +84,7 @@ def configuration():
                         help='weight decay applied to all weights')
     args = parser.parse_args()
 
-if __name__ == "__main__":
-
-    args = parse_args()
-    if not args.continue_train:
-        path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
-
-    logging.basicConfig(level=logging.INFO,
-                        handlers = [
-                            logging.StreamHandler(),
-                            logging.FileHandler(os.path.join(path, "log.log"))
-                        ])
-
-    ctxs = gu.try_all_gpus()
-    logging.info('Computation on: {}'.format(ctxs))
-
-    if args.last_hid_size < 0:
-        args.last_hid_size = args.emb_size
-    if args.drop_l < 0:
-        args.drop_l = args.drop_h
-    if args.small_batch_size < 0:
-        args.small_batch_size = args.batch_size
-
-
-
-    # Set the random seed manually for reproducibility.
-    np.random.seed(args.seed)
-    mxnet.random.seed(args.seed)
-
-    ###############################################################################
-    # Load data
-    ###############################################################################
-
-    corpus = data.Corpus(args.data)
-
-    eval_batch_size = 10
-    test_batch_size = 1
-    train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs)
-    val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs)
-    test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs)
-
-    ###############################################################################
-    # Build the model
-    ###############################################################################
-    '''Model parameters aved path: /train/experiment/model.params.
-    If parameters exists, load the saved parameters, else initialize'''
-
-    ntokens = len(corpus.dictionary)
-
-    params = os.path.join(path, 'model.params')
-
-    if args.model == 'MOS':
-        model = model.MOS(args.rnn_cell, ntokens, args.emb_size, args.hid_size, args.last_hid_size, args.nlayers,
-                           args.dropout, args.drop_h, args.drop_i, args.drop_e, args.w_drop,
-                           args.tied, args.drop_l, args.n_experts)
-    elif args.model == 'AWDRNN':
-        model = model.AWDRNN(args.rnn_cell, ntokens, args.emb_size, args.hid_size, args.n_layers,
-                     tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
-                     drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
-    elif args.model == 'StandardRNN':
-        model = gluonnlp.model.StandardRNN(args.rnn_cell, ntokens, args.emb_size, args.hid_size,
-                                        args.n_layers, dropout=args.dropout, tie_weights=args.tied)
-
-
-    if os.path.exists(params) and os.path.isfile(params) and os.path.getsize(params)>0:
-        model.load_params(params, ctx=ctxs)
-        logging.info("Loaded parameters from : {}".format(params))
-    else:
-        model.initialize(init.Xavier(), ctx=ctxs)
-
-    trainer = gluon.Trainer(model.collect_params(), 'sgd',
-                            {'learning_rate': lr, 'momentum': 0, 'wd': 0})
-
-    loss = gluon.loss.SoftmaxCrossEntropyLoss()
-
-    train()
-    #total_params = sum(x.data.nelement() for x in model.parameters())
-    #logging('Args: {}'.format(args))
-    #logging('Model total parameters: {}'.format(total_params))
+    return args
 
 
 def evaluate(data_source, batch_size=10):
@@ -279,3 +202,119 @@ def epoch_train():
 
     nd.waitall()
     ############################################################################
+
+if __name__ == "__main__":
+    ###############################################################################
+    # prepare configuration, files for saving data and logging information
+    ###############################################################################
+    args = configuration()
+
+    if args.continue_exprm:
+        path = utils.make_dir([args.save, args.continue_exprm])
+        args = data.Config(utils.read_config(os.path.join(path, 'config.json')))
+    else:
+        # By default, use argparse for configuration
+        if args.tied: args.hid_size = args.emb_size
+        if args.debug: args.log_interval = 2
+        path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
+        args = data.Config(utils.save_config(args, os.path.join(path, 'config.json')))
+
+    logging.basicConfig(level=logging.INFO,
+                        handlers = [
+                            logging.StreamHandler(),
+                            logging.FileHandler(os.path.join(path, "log.log"))
+                        ])
+
+    # set the header of csv logging files
+    epoch_info = []
+    epoch_file = os.path.join(path, 'epoch_results.csv')
+    utils.save_info(['epoch', 'time/s', 'val_loss', 'perplexity'], epoch_file)
+
+    batch_info = []
+    batch_file = os.path.join(path, 'batch_results.csv')
+    utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'val_loss', 'perplexity'], batch_file)
+
+    # config the conputation resources
+    if args.cpu:
+        ctxs = [mxnet.cpu()]
+    else:
+        ctxs = gu.try_all_gpus()
+    logging.info('Computation on: {}'.format(ctxs))
+
+    # Set the random seed manually for reproducibility.
+    np.random.seed(args.seed)
+    mxnet.random.seed(args.seed)
+
+    ###############################################################################
+    # Load data
+    ###############################################################################
+
+    corpus = data.Corpus(args.data, args.debug)
+
+    eval_batch_size = 10
+    test_batch_size = 1
+    train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
+    val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
+    test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
+
+    ###############################################################################
+    # Build the model
+    ###############################################################################
+    '''Model parameters aved path: /train/experiment/model.params.
+    If parameters exists, load the saved parameters, else initialize'''
+
+    vocab_size = len(corpus.dictionary)
+
+    params = os.path.join(path, 'model.params')
+    trainer_states = os.path.join(path, 'trainer.states')
+
+    if args.last_hid_size < 0:
+        args.last_hid_size = args.emb_size
+    if args.drop_l < 0:
+        args.drop_l = args.drop_h
+    if args.small_batch_size < 0:
+        args.small_batch_size = args.batch_size
+
+    if args.model == 'MOS':
+        model = model.MOS(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.nlayers,
+                           args.dropout, args.drop_h, args.drop_i, args.drop_e, args.w_drop,
+                           args.tied, args.drop_l, args.n_experts)
+    elif args.model == 'AWDRNN':
+        model = model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
+                     tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
+                     drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
+    elif args.model == 'RNN':
+        model = model.RNN(vocab_size, args)
+    elif args.model == 'StandardRNN':
+        model = gluonnlp.model.StandardRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size,
+                                        args.n_layers, dropout=args.dropout, tie_weights=args.tied)
+
+
+    loss = gluon.loss.SoftmaxCrossEntropyLoss(batch_axis=1)
+
+    if args.continue_exprm and os.path.exists(params) and os.path.isfile(params) and os.path.getsize(params)>0:
+        model.load_params(params, ctx=ctxs)
+        trainer.load_states(trainer_states)
+        logging.info("Loading parameters from : {}".format(params))
+        logging.info("Loading training states from : {}".format(trainer_states))
+    else:
+        model.initialize(init.Xavier(), ctx=ctxs)
+
+    trainer = gluon.Trainer(model.collect_params(), 'sgd',
+                {'learning_rate': args.lr, 'momentum': args.momentum, 'wd': args.wdecay})
+
+    if args.continue_exprm and os.path.exists(trainer_states) and os.path.isfile(trainer_states) and os.path.getsize(trainer_states)>0:
+        trainer.load_states(trainer_states)
+        logging.info("Loading training states from : {}".format(trainer_states))
+
+    try:
+        train()
+    except KeyboardInterrupt:
+        utils.save_info(epoch_info, epoch_file)
+        utils.save_info(batch_info, batch_file)
+        logging.info('-' * 89)
+        logging.info('Exiting from training early, log information written')
+        sys.exit()
+
+    #total_params = sum(x.data.nelement() for x in model.parameters())
+    #logging.info('Args: {}'.format(args))
