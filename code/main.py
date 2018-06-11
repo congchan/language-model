@@ -89,17 +89,19 @@ def configuration():
 
 def evaluate(data_source, batch_size=10):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
-    cost_sum = nd.array([0], ctx=ctxs)
+    cost_sum = 0
     n = 0
-    state = model.begin_state(func=nd.zeros, batch_size=batch_size, ctx=ctxs)
+    state = model.begin_state(func=nd.zeros, batch_size=batch_size)
     for i in range(0, data_source.shape[0] - 1, args.bptt):
-        X, Y = get_batch(data_source, i)
+        X, Y = get_batch(data_source, i, args)
         output, state = model(X, state)
         # cost tensor with shape (batch_size,).
         # Dimenions other than batch_axis are averaged out.
         cost = loss(output, Y)
-        cost_sum += cost.sum()
+        cost_sum += cost.sum().asscalar()
         n += cost.size
+        state = detach(state)
+
     return cost_sum / n
 
 def train():
