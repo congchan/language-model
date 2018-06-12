@@ -191,7 +191,7 @@ def train_one_epoch(epoch, costs):
         gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
         trainer.step(1)
 
-        batch_loss = sum(costs).asscalar() # this will synchronize all GPUs
+        batch_loss = (sum(costs)/len(costs)).asscalar() # this will synchronize all GPUs
 
         batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
                       (time.time() - tic_b) * 1000, batch_loss, math.exp(batch_loss) ])
