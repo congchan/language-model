@@ -326,15 +326,14 @@ if __name__ == "__main__":
         logging.info("Loading training states from : {}".format(trainer_states))
 
     # At any point you can hit Ctrl + C to break out of training early.
-    if not args.predict_only:
-        try:
-            train()
-        except KeyboardInterrupt:
+    try:
+        if not args.predict_only: train()
+    except KeyboardInterrupt:
             logging.info('-' * 89)
-            logging.info('Exiting from training early | Start evaluation on test_data')
-            predict()
-
-    predict()
+            logging.info('Exiting from training early')
+    finally:
+        logging.info('Start evaluation on test_data')
+        predict()
 
     #total_params = sum(x.data.nelement() for x in model.parameters())
     #logging.info('Args: {}'.format(args))
