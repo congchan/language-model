@@ -91,10 +91,10 @@ def configuration():
 def predict():
     ''' Evalute on test data'''
     test_loss = evaluate(test_data, test_batch_size)
-    logging.info('=' * 89)
+    logging.info('-' * 89)
     logging.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
         test_loss, math.exp(test_loss)))
-    logging.info('=' * 89)
+    logging.info('-' * 89)
 
 def evaluate(data_source, batch_size=10):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
@@ -136,7 +136,7 @@ def train():
 
         if val_loss < best_loss:
             save_checkpoint(model, trainer, path)
-            logging.info('Saving Normal!')
+            logging.info('Performance improving, saving Model')
             best_loss = val_loss
 
 
