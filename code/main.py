@@ -225,7 +225,9 @@ if __name__ == "__main__":
 
     if args.continue_exprm:
         path = utils.make_dir([args.save, args.continue_exprm])
-        args = data.Config(utils.read_config(os.path.join(path, 'config.json'),
+        configfile = os.path.join(path, 'config.json')
+        if utils.check_file(configfile):
+            args = data.Config(utils.read_config(configfile,
                                             {'continue_exprm':args.continue_exprm}))
     else:
         # By default, use argparse for configuration
