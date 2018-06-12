@@ -11,24 +11,25 @@ def configuration():
     parser.add_argument('--continue_exprm', type=str, default=None,
                         help='continue experiment from a checkpoint')
     parser.add_argument('--data', type=str, default='penn',
-                        help='which data corpus')
+                        help='which data corpus: penn, wikitext-2')
     parser.add_argument('--model', type=str, default='Mos',
-                        help='Model, options (MOS, StandardRNN, AWDRNN)')
+                        help='Model, options (RNN, MOS, StandardRNN, AWDRNN)')
     parser.add_argument('--exprm', type=str, default='',
                         help='experiment suffix')
     parser.add_argument('--rnn_cell', type=str, default='lstm',
-                        help='type of recurrent net (rnn_tanh, rnn_relu, lstm, gru, sru)')
+                        help='type of recurrent net (lstm, gru)')
     parser.add_argument('--emb_size', type=int, default=400,
                         help='size of word embeddings')
     parser.add_argument('--hid_size', type=int, default=1150,
                         help='number of hidden units per layer')
     parser.add_argument('--last_hid_size', type=int, default=-1,
-                        help='number of hidden units for the last rnn layer')
+                        help='number of hidden units for the last rnn layer\
+                        by default equal to hid_size')
     parser.add_argument('--n_layers', type=int, default=1,
                         help='number of layers')
-    parser.add_argument('--lr', type=float, default=30,
+    parser.add_argument('--lr', type=float, default=3,
                         help='initial learning rate')
-    parser.add_argument('--clip', type=float, default=0.25,
+    parser.add_argument('--clipping_theta', type=float, default=0.25,
                         help='gradient clipping')
     parser.add_argument('--epochs', type=int, default=8000,
                         help='upper epoch limit')
@@ -82,8 +83,7 @@ def configuration():
                         help='max sequence length')
     parser.add_argument('--single_gpu', default=False, action='store_true',
                         help='use single GPU')
-    parser.add_argument('--clipping_theta', type=float, default=0.25,
-                        help='weight decay applied to all weights')
+
     args = parser.parse_args()
 
     return args
