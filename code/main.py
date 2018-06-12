@@ -88,6 +88,13 @@ def configuration():
 
     return args
 
+def predict():
+    ''' Evalute on test data'''
+    test_loss = evaluate(test_data, test_batch_size)
+    logging.info('=' * 89)
+    logging.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+        test_loss, math.exp(test_loss)))
+    logging.info('=' * 89)
 
 def evaluate(data_source, batch_size=10):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
@@ -321,7 +328,10 @@ if __name__ == "__main__":
             logging.info('-' * 89)
             logging.info('Exiting from training early')
 
+            logging.info('Exiting from training early | Start evaluation on test_data')
+            predict()
 
+    predict()
 
     #total_params = sum(x.data.nelement() for x in model.parameters())
     #logging.info('Args: {}'.format(args))
