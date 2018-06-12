@@ -69,10 +69,16 @@ def save_config(config, file):
     return config
 
 
-def read_config(file):
-
+def read_config(file, update=None):
+    ''' ONLY when continue_exprm.
+    update provide {K:V} pair to update'''
     with open(file, 'r') as configfile:
         config = json.load(configfile)
+        configfile.close()
+
+    if update:
+        config.update(update)
+        save_config(config, file)
 
     return config
 
