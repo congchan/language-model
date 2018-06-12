@@ -337,8 +337,9 @@ if __name__ == "__main__":
             logging.info('-' * 89)
             logging.info('Exiting from training early')
     finally:
-        logging.info('Start evaluation on test_data')
-        predict()
+        if not args.debug:
+            logging.info('Start evaluation on test_data')
+            predict()
 
     #total_params = sum(x.data.nelement() for x in model.parameters())
     #logging.info('Args: {}'.format(args))
