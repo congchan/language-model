@@ -52,6 +52,8 @@ def configuration():
                         help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
     parser.add_argument('--tied', action='store_false',
                         help='tie the word embedding and softmax weights')
+    parser.add_argument('--predict_only', action='store_true',
+                        help='predict only, default not')
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
     parser.add_argument('--nonmono', type=int, default=5,
@@ -108,30 +110,27 @@ def train():
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
+    logging.info('-' * 40 + "Begin training" + '-' * 40)
     # Loop over epochs.
     best_loss = float("Inf")
-    # At any point you can hit Ctrl + C to break out of training early.
-    try:
-        for epoch in range(args.epochs):
-            tic = time.time()
-            train_one_epoch(epoch)
-            val_loss = evaluate(val_data, eval_batch_size)
-            toc = time.time()
-            logging.info('-' * 89)
-            logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.3f} | '
-                    'valid ppl {:8.2f}'.format(epoch, toc - tic, val_loss, math.exp(val_loss)))
-            epoch_info.append([epoch, toc - tic, val_loss, math.exp(val_loss) ])
-            logging.info('-' * 89)
-
-            if val_loss < best_loss:
-                save_checkpoint(model, trainer, path)
-                logging.info('Saving Normal!')
-                best_loss = val_loss
-
-    except KeyboardInterrupt:
-
+    for epoch in range(args.epochs):
+        tic = time.time()
+        train_one_epoch(epoch)
+        val_loss = evaluate(val_data, eval_batch_size)
+        toc = time.time()
         logging.info('-' * 89)
-        logging.info('Exiting from training early, log information written')
+        logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.3f} | '
+                'valid ppl {:8.2f}'.format(epoch, toc - tic, val_loss, math.exp(val_loss)))
+        epoch_info.append([epoch, toc - tic, val_loss, math.exp(val_loss) ])
+        utils.save_info(epoch_info, epoch_file)
+        logging.info('-' * 89)
+
+        if val_loss < best_loss:
+            save_checkpoint(model, trainer, path)
+            logging.info('Saving Normal!')
+            best_loss = val_loss
+
+
 
 def train_one_epoch(epoch):
     ''' Train all the batches within one epoch'''
@@ -151,7 +150,7 @@ def train_one_epoch(epoch):
         # Control seq_len cited from origin paper
         random_bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Normal distribution (mean, variance): Prevent extreme sequence lengths
-        seq_len = max(5, int(np.random.normal(random_bptt, 5))) #
+        seq_len = max(5, int(np.random.normal(random_bptt, 5)))
         # There's a very small chance that it could select a very long sequence length resulting in OOM
         seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
         ########################################################################
@@ -185,16 +184,23 @@ def train_one_epoch(epoch):
         gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
         trainer.step(1)
 
-        total_loss += sum(costs).asscalar() # this will synchronize all GPUs
+        batch_loss = sum(costs).asscalar() # this will synchronize all GPUs
+
+        batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
+                      (time.time() - tic_b) * 1000, batch_loss, math.exp(batch_loss) ])
+
+        total_loss += batch_loss
+
         if batch % args.log_interval == 0 and batch > 0:
+            utils.save_info(batch_info, batch_file)
+
             toc_b = time.time()
-            cur_loss = total_loss / args.log_interval
-            batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
-                          (toc_b - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss) ])
+            total_loss = total_loss / args.log_interval
+
             logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.2f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
                 epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
-                (toc_b - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                (toc_b - tic_b) * 1000 / args.log_interval, total_loss, math.exp(total_loss)))
 
             total_loss = 0
 
@@ -307,14 +313,15 @@ if __name__ == "__main__":
         trainer.load_states(trainer_states)
         logging.info("Loading training states from : {}".format(trainer_states))
 
-    try:
-        train()
-    except KeyboardInterrupt:
-        utils.save_info(epoch_info, epoch_file)
-        utils.save_info(batch_info, batch_file)
-        logging.info('-' * 89)
-        logging.info('Exiting from training early, log information written')
-        sys.exit()
+    # At any point you can hit Ctrl + C to break out of training early.
+    if not args.predict_only:
+        try:
+            train()
+        except KeyboardInterrupt:
+            logging.info('-' * 89)
+            logging.info('Exiting from training early')
+
+
 
     #total_params = sum(x.data.nelement() for x in model.parameters())
     #logging.info('Args: {}'.format(args))

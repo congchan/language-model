@@ -84,7 +84,7 @@ def read_config(file, update=None):
 
 
 def save_info(results, file):
-    ''' save the logging info to csv file'''
+    ''' save the logging info to csv file, and clear the buffer'''
     with open(file, 'a', newline='') as csvfile:
         writer = csv.writer(csvfile, delimiter=',', dialect='excel')
         if isinstance(results[0], list):
@@ -92,6 +92,8 @@ def save_info(results, file):
         else:
             writer.writerow(results)
         csvfile.close()
+
+    del results[:]
 
 
 def get_params(params, ctx):
