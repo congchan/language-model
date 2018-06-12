@@ -295,9 +295,7 @@ if __name__ == "__main__":
 
     if args.continue_exprm and os.path.exists(params) and os.path.isfile(params) and os.path.getsize(params)>0:
         model.load_params(params, ctx=ctxs)
-        trainer.load_states(trainer_states)
         logging.info("Loading parameters from : {}".format(params))
-        logging.info("Loading training states from : {}".format(trainer_states))
     else:
         model.initialize(init.Xavier(), ctx=ctxs)
 
