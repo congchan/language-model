@@ -130,24 +130,28 @@ def train():
 
     except KeyboardInterrupt:
 
-def epoch_train():
+        logging.info('-' * 89)
+        logging.info('Exiting from training early, log information written')
+
+def train_one_epoch(epoch):
     ''' Train all the batches within one epoch'''
 
-    total_loss = nd.array([0], ctx=ctxs)
+    total_loss = 0
     costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
-    m = batch_size // len(ctxs)
-    state = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
-    # state = nd.zeros(shape=(args.batch_size, args.hid_size), ctx=ctxs) # （bsz, hidden_size)
+    m = args.batch_size // len(ctxs)
+    logging.info("Split {} samples to each device".format(m))
+    states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
+    # states = [nd.zeros(shape=(m, args.hid_size), ctx=ctx) for ctx in ctxs] # （bsz, hidden_size)
 
     ############################################################################
     # Loop all batches
-    batch, i = 0, 0
-    while i < train_data.shape(0) - 1 - 1:
+    batch, cursor = 0, 0
+    while cursor < train_data.shape[0] - 1 - 1:
         #######################################################################
         # Control seq_len cited from origin paper
-        bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
+        random_bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Normal distribution (mean, variance): Prevent extreme sequence lengths
-        seq_len = max(5, int(np.random.normal(bptt, 5))) #
+        seq_len = max(5, int(np.random.normal(random_bptt, 5))) #
         # There's a very small chance that it could select a very long sequence length resulting in OOM
         seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
         ########################################################################
@@ -157,7 +161,7 @@ def epoch_train():
 
         '''Each batch shape(seq_len, batch_size), split data to each device.
         m is the # of samples for each device, devided along batch_size axis.'''
-        Xs, Ys = get_batch(train_data, i, args, seq_len=seq_len)
+        Xs, Ys = get_batch(train_data, cursor, args, seq_len=seq_len)
         assert args.batch_size == Xs.shape[1], 'data shape[1] should be batch_size'
         Xs = gluon.utils.split_and_load(Xs, ctxs, 1)
         Ys = gluon.utils.split_and_load(Ys, ctxs, 1)
@@ -165,12 +169,12 @@ def epoch_train():
 
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
-        # state = detach(state)
+        states = detach(states)
 
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, state[i] = model(X, state[i].detach()) # state（n_layers, bsz, hidden_size)
-                 costs[i]= loss(output, Ys[i]).sum() / (seq_len * m)  # loss (seq_len * m,)
+                 output, states[i] = model(X, states[i]) # state（n_layers, bsz, hidden_size)
+                 costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
 
         for c in costs:
             c.backward()
@@ -178,21 +182,24 @@ def epoch_train():
         # 梯度裁剪。需要注意的是，这里的梯度是整个批量的梯度。
         # 因此我们将 clipping_theta 乘以 seq_len 和 batch_size。
         grads = [p.grad(ctx) for ctx in ctxs for p in model.collect_params().values()]
-        gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len * batch_size)
-        trainer.step(batch_size)
+        gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
+        trainer.step(1)
 
         total_loss += sum(costs).asscalar() # this will synchronize all GPUs
         if batch % args.log_interval == 0 and batch > 0:
+            toc_b = time.time()
             cur_loss = total_loss / args.log_interval
-            logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, trainer.learning_rate,
-                (time.time() - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+            batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
+                          (toc_b - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss) ])
+            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.2f} | seq_len {:3d} | ms/batch {:5.2f} | '
+                    'loss {:5.3f} | ppl {:5.2f}'.format(
+                epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
+                (toc_b - tic_b) * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+
             total_loss = 0
-            tic_b = time.time()
 
         batch += 1
-        i += seq_len
+        cursor += seq_len
 
     nd.waitall()
     ############################################################################
@@ -312,3 +319,4 @@ if __name__ == "__main__":
 
     #total_params = sum(x.data.nelement() for x in model.parameters())
     #logging.info('Args: {}'.format(args))
+    #logging.info('Model total parameters: {}'.format(total_params))
