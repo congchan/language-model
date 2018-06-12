@@ -225,9 +225,11 @@ if __name__ == "__main__":
     if args.continue_exprm:
         path = utils.make_dir([args.save, args.continue_exprm])
         configfile = os.path.join(path, 'config.json')
-        if utils.check_file(configfile):
-            args = data.Config(utils.read_config(configfile,
-                                            {'continue_exprm':args.continue_exprm}))
+
+        try: args = data.Config(utils.read_config(configfile,
+                                        {'continue_exprm':args.continue_exprm}))
+        except FileNotFoundError: raise
+
     else:
         # By default, use argparse for configuration
         if args.tied: args.hid_size = args.emb_size
