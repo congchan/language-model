@@ -146,12 +146,9 @@ def train_one_epoch(epoch, costs):
     costs is the container created once and reuse for efficiency'''
 
     total_loss = 0
-    m = args.batch_size // len(ctxs)
-    logging.info("Split {} samples to each device".format(m))
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
     # states = [nd.zeros(shape=(m, args.hid_size), ctx=ctx) for ctx in ctxs] # （bsz, hidden_size)
 
-    ############################################################################
     # Loop all batches
     batch, cursor = 0, 0
     while cursor < train_data.shape[0] - 1 - 1:
@@ -258,7 +255,9 @@ if __name__ == "__main__":
         ctxs = [mxnet.cpu()]
     else:
         ctxs = gu.try_all_gpus()
-    logging.info('Computation on: {}'.format(ctxs))
+    m = args.batch_size // len(ctxs)
+    logging.info("Split batch samples (batch size={}) to {}, each device loaded {} samples".format(
+                args.batch_size, ctxs, m))
 
     # Set the random seed manually for reproducibility.
     np.random.seed(args.seed)
