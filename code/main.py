@@ -69,8 +69,8 @@ def configuration():
                         help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
     parser.add_argument('--beta', type=float, default=1,
                         help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
-    parser.add_argument('--momentum', type=float, default=0.0,
-                        help='learning rate momentum')
+    parser.add_argument('--optimizer', type=str, default='SGD',
+                        help='optimizer in trainer: SGD, Adam, RMSProp, ... ' )
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
     parser.add_argument('--n_experts', type=int, default=10,
@@ -163,7 +163,7 @@ def train_one_epoch(epoch, costs):
         ########################################################################
 
         # Schedual learning rate
-        trainer.set_learning_rate(trainer.learning_rate * seq_len / args.bptt)
+        # trainer.set_learning_rate(trainer.learning_rate * seq_len / args.bptt)
 
         '''Each batch shape(seq_len, batch_size), split data to each device.
         m is the # of samples for each device, devided along batch_size axis.'''
@@ -323,8 +323,8 @@ if __name__ == "__main__":
     else:
         model.initialize(init.Xavier(), ctx=ctxs)
 
-    trainer = gluon.Trainer(model.collect_params(), 'sgd',
-                {'learning_rate': args.lr, 'momentum': args.momentum, 'wd': args.wdecay})
+    trainer = gluon.Trainer(model.collect_params(), args.optimizer,
+                {'learning_rate': args.lr, 'wd': args.wdecay})
 
     if args.continue_exprm and utils.check_file(trainer_states):
         trainer.load_states(trainer_states)
