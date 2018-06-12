@@ -151,6 +151,7 @@ def train_one_epoch(epoch, costs):
 
     # Loop all batches
     batch, cursor = 0, 0
+    tic_log_interval = time.time()
     while cursor < train_data.shape[0] - 1 - 1:
         #######################################################################
         # Control seq_len cited from origin paper
@@ -200,15 +201,17 @@ def train_one_epoch(epoch, costs):
         if batch % args.log_interval == 0 and batch > 0:
             utils.save_info(batch_info, batch_file)
 
-            toc_b = time.time()
+            toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
 
             logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.2f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
                 epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
-                (toc_b - tic_b) * 1000 / args.log_interval, total_loss, math.exp(total_loss)))
+                (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
+                math.exp(total_loss)))
 
             total_loss = 0
+            tic_log_interval = time.time()
 
         batch += 1
         cursor += seq_len
@@ -270,6 +273,8 @@ if __name__ == "__main__":
     ###############################################################################
 
     corpus = data.Corpus(args.data, args.debug)
+    logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens".format(
+                    len(corpus.train), len(corpus.valid), len(corpus.test)))
 
     eval_batch_size = 10
     test_batch_size = 1
