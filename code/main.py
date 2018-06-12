@@ -117,12 +117,14 @@ def train():
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
+    costs_container = [nd.array([0], ctx=ctx) for ctx in ctxs]
+
     logging.info('-' * 40 + "Begin training" + '-' * 40)
     # Loop over epochs.
     best_loss = float("Inf")
     for epoch in range(args.epochs):
         tic = time.time()
-        train_one_epoch(epoch)
+        train_one_epoch(epoch, costs_container)
         val_loss = evaluate(val_data, eval_batch_size)
         toc = time.time()
         logging.info('-' * 89)
@@ -139,11 +141,11 @@ def train():
 
 
 
-def train_one_epoch(epoch):
-    ''' Train all the batches within one epoch'''
+def train_one_epoch(epoch, costs):
+    ''' Train all the batches within one epoch.
+    costs is the container created once and reuse for efficiency'''
 
     total_loss = 0
-    costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
     m = args.batch_size // len(ctxs)
     logging.info("Split {} samples to each device".format(m))
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
