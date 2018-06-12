@@ -60,9 +60,9 @@ def save_checkpoint(model, trainer, path, finetune=False):
         model.save_params(os.path.join(path, 'model.params'))
         trainer.save_states(os.path.join(path, 'trainer.states'))
 
-def save_config(args, file):
+def save_config(config, file):
+    ''' config: dict '''
 
-    config = vars(args)
     with open(file, 'w') as configfile:
         json.dump(config, configfile)
 

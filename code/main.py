@@ -218,7 +218,7 @@ if __name__ == "__main__":
         if args.tied: args.hid_size = args.emb_size
         if args.debug: args.log_interval = 2
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
-        args = data.Config(utils.save_config(args, os.path.join(path, 'config.json')))
+        args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
 
     logging.basicConfig(level=logging.INFO,
                         handlers = [
