@@ -307,7 +307,7 @@ if __name__ == "__main__":
 
     loss = gluon.loss.SoftmaxCrossEntropyLoss(batch_axis=1)
 
-    if args.continue_exprm and os.path.exists(params) and os.path.isfile(params) and os.path.getsize(params)>0:
+    if args.continue_exprm and utils.check_file(params):
         model.load_params(params, ctx=ctxs)
         logging.info("Loading parameters from : {}".format(params))
     else:
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     trainer = gluon.Trainer(model.collect_params(), 'sgd',
                 {'learning_rate': args.lr, 'momentum': args.momentum, 'wd': args.wdecay})
 
-    if args.continue_exprm and os.path.exists(trainer_states) and os.path.isfile(trainer_states) and os.path.getsize(trainer_states)>0:
+    if args.continue_exprm and utils.check_file(trainer_states):
         trainer.load_states(trainer_states)
         logging.info("Loading training states from : {}".format(trainer_states))
 
@@ -326,8 +326,6 @@ if __name__ == "__main__":
             train()
         except KeyboardInterrupt:
             logging.info('-' * 89)
-            logging.info('Exiting from training early')
-
             logging.info('Exiting from training early | Start evaluation on test_data')
             predict()
 

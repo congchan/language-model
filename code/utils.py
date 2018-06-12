@@ -1,5 +1,9 @@
 import os, json, csv
 
+def check_file(file):
+    ''' Check if file is valid'''
+    return os.path.exists(file) and os.path.isfile(file) and os.path.getsize(file)>0
+
 def detach(state):
     if isinstance(state[0], (tuple, list)):
         state = [ [i.detach() for i in s] for s in state]
