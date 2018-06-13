@@ -60,6 +60,8 @@ def configuration():
                         help='random seed')
     parser.add_argument('--cpu', action='store_true',
                         help='use cpu only, default not')
+    parser.add_argument('--num_GPUs', type=int, default=2,
+                        help='number of GPUs should be no more than the actual request gpus')
     parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                         help='report interval')
     parser.add_argument('--save', type=str,  default='Experiments',
@@ -258,7 +260,7 @@ if __name__ == "__main__":
     if args.cpu:
         ctxs = [mxnet.cpu()]
     else:
-        ctxs = utils.try_all_gpus()
+        ctxs = utils.try_all_gpus(args.num_GPUs)
     m = args.batch_size // len(ctxs)
     logging.info("Split batch samples (batch size={}) to {}, each device loaded {} samples".format(
                 args.batch_size, ctxs, m))

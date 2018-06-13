@@ -111,7 +111,7 @@ def get_params(params, ctx):
 
 def allreduce(data):
     '''reduce data from all GPU and broadcast
-    Usage:  data = [nd.ones((1,2), ctx=mxnet.gpu(i)) * (i + 1) for i in range(2)]
+    Usage:  data = [mxnet.ndarray.ones((1,2), ctx=mxnet.gpu(i)) * (i + 1) for i in range(2)]
             allreduce(data)'''
     for i in range(1, len(data)):
         data[0][:] += data[i].copyto(data[0].context)
@@ -136,16 +136,17 @@ def get_mem():
     res = subprocess.check_output(['ps', 'u', '-p', str(os.getpid())])
     return int(str(res).split()[15]) / 1e3
 
-def try_all_gpus():
+def try_all_gpus(num_GPUs):
     """Return all available GPUs, or [mxnet.cpu()] if there is no GPU"""
     ctxes = []
     try:
-        for i in range(8):
+        for i in range(num_GPUs):
             ctx = mxnet.gpu(i)
-            _ = nd.array([0], ctx=ctx)
+            _ = mxnet.ndarray.array([0], ctx=ctx)
             ctxes.append(ctx)
     except:
-        pass
+        raise ValueError('Failed to get the request number of GPUs')
+
     if not ctxes:
         ctxes = [mxnet.cpu()]
     return ctxes
