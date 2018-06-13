@@ -177,7 +177,7 @@ def train_one_epoch(epoch, costs):
 
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, states[i] = model(X, states[i]) # state（n_layers, bsz, hidden_size)
+                 output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
                  costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
 
         for c in costs:
