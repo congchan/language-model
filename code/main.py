@@ -61,9 +61,9 @@ def configuration():
                         help='random seed')
     parser.add_argument('--cpu', action='store_true',
                         help='use cpu only, default not')
-    parser.add_argument('--num_GPUs', type=int, default=2,
+    parser.add_argument('--num_gpus', type=int, default=2,
                         help='number of GPUs should be no more than the actual request gpus')
-    parser.add_argument('--log-interval', type=int, default=200, metavar='N',
+    parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                         help='report interval')
     parser.add_argument('--save', type=str,  default='Experiments',
                         help='path to save the final model')
@@ -252,6 +252,7 @@ if __name__ == "__main__":
     else:
         # By default, use argparse for configuration
         if args.tied: args.hid_size = args.emb_size
+        args.log_interval = 929589 // (args.batch_size * args.bptt) // 10# log 10 times per epoch
         if args.debug: args.log_interval = 2
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
         args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
@@ -275,7 +276,7 @@ if __name__ == "__main__":
     if args.cpu:
         ctxs = [mxnet.cpu()]
     else:
-        ctxs = utils.try_all_gpus(args.num_GPUs)
+        ctxs = utils.try_all_gpus(args.num_gpus)
     m = args.batch_size // len(ctxs)
     logging.info("Split batch samples (batch size={}) to {}, each device loaded {} samples".format(
                 args.batch_size, ctxs, m))
