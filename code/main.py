@@ -98,22 +98,33 @@ def predict():
         test_loss, math.exp(test_loss)))
     logging.info('-' * 89)
 
-def evaluate(data_source, batch_size=10):
+def evaluate(data_source, batch_size):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
+    costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
     cost_sum = 0
     n = 0
-    state = model.begin_state(func=nd.zeros, batch_size=batch_size)
-    for i in range(0, data_source.shape[0] - 1, args.bptt):
-        X, Y = get_batch(data_source, i, args)
-        output, state = model(X, state)
-        # cost tensor with shape (batch_size,).
-        # Dimenions other than batch_axis are averaged out.
-        cost = loss(output, Y)
-        cost_sum += cost.sum().asscalar()
-        n += cost.size
-        state = detach(state)
+    states = [model.begin_state(batch_size=batch_size // len(ctxs), ctx=ctx) for ctx in ctxs]
+    for cursor in range(0, data_source.shape[0] - 1, args.bptt):
+        Xs, Ys = get_batch(data_source, cursor, args)
+        Xs = gluon.utils.split_and_load(Xs, ctxs, 1)
+        Ys = gluon.utils.split_and_load(Ys, ctxs, 1)
 
-    return cost_sum / n
+        for i, X in enumerate(Xs):
+            # By default, MXNet is in predict_mode
+            output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
+            costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
+
+        costs_cpu = [0] * len(ctxs)
+        for i, c in enumerate(costs):
+            costs_cpu[i] = c.as_in_context(mxnet.cpu())
+
+        cost_sum = sum(costs_cpu)/len(costs_cpu)
+
+        states = detach(states)
+
+        nd.waitall()
+
+    return cost_sum.asscalar()
 
 def train():
     '''If gluon trainer recognizes multi-devices,
@@ -281,8 +292,9 @@ if __name__ == "__main__":
     logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens".format(
                     len(corpus.train), len(corpus.valid), len(corpus.test)))
 
-    eval_batch_size = 10
-    test_batch_size = 1
+    eval_batch_size = 10 * len(ctxs)
+    test_batch_size = 1 * len(ctxs)
+
     train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
     val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
     test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
