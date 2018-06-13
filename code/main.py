@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import math, time, argparse, os, sys, logging, gluonnlp, mxnet
 import numpy as np
 import data, model, utils
@@ -148,7 +149,6 @@ def train_one_epoch(epoch, costs):
 
     total_loss = 0
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
-    # states = [nd.zeros(shape=(m, args.hid_size), ctx=ctx) for ctx in ctxs] # （bsz, hidden_size)
 
     # Loop all batches
     batch, cursor = 0, 0
@@ -180,7 +180,7 @@ def train_one_epoch(epoch, costs):
 
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, states[i] = model(X, states[i]) # state（n_layers, bsz, hidden_size)
+                 output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
                  costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
 
         for c in costs:
