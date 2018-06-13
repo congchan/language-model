@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import math, time, argparse, os, sys, logging, gluonnlp, mxnet
 import numpy as np
 import data, model, utils
