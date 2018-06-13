@@ -192,12 +192,16 @@ def train_one_epoch(epoch, costs):
         gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
         trainer.step(1)
 
-        batch_loss = (sum(costs)/len(costs)).asscalar() # this will synchronize all GPUs
+        costs_cpu = [0] * len(ctxs)
+        for i, c in enumerate(costs):
+            costs_cpu[i] = c.as_in_context(mxnet.cpu())
+
+        batch_cost = (sum(costs_cpu)/len(costs_cpu)).asscalar() # this will synchronize all GPUs
 
         batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
-                      (time.time() - tic_b) * 1000, batch_loss, math.exp(batch_loss) ])
+                      (time.time() - tic_b) * 1000, batch_cost, math.exp(batch_cost) ])
 
-        total_loss += batch_loss
+        total_loss += batch_cost
 
         if batch % args.log_interval == 0 and batch > 0:
             utils.save_info(batch_info, batch_file)
@@ -217,7 +221,7 @@ def train_one_epoch(epoch, costs):
         batch += 1
         cursor += seq_len
 
-    nd.waitall()
+        nd.waitall() # synchronize batch data
     ############################################################################
 
 if __name__ == "__main__":
