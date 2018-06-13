@@ -146,7 +146,6 @@ def train_one_epoch(epoch, costs):
 
     total_loss = 0
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
-    # states = [nd.zeros(shape=(m, args.hid_size), ctx=ctx) for ctx in ctxs] # （bsz, hidden_size)
 
     # Loop all batches
     batch, cursor = 0, 0
