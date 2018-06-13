@@ -1,7 +1,6 @@
 import math, time, argparse, os, sys, logging, gluonnlp, mxnet
 import numpy as np
 import data, model, utils
-import gluon_utils as gu
 from mxnet import gluon, nd, init, autograd
 from utils import batchify, get_batch, detach, create_exp_dir, save_checkpoint
 
@@ -259,7 +258,7 @@ if __name__ == "__main__":
     if args.cpu:
         ctxs = [mxnet.cpu()]
     else:
-        ctxs = gu.try_all_gpus()
+        ctxs = utils.try_all_gpus()
     m = args.batch_size // len(ctxs)
     logging.info("Split batch samples (batch size={}) to {}, each device loaded {} samples".format(
                 args.batch_size, ctxs, m))

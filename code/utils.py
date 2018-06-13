@@ -1,4 +1,4 @@
-import os, json, csv
+import os, json, csv, mxnet
 
 def check_file(file):
     ''' Check if file is valid'''
@@ -102,7 +102,7 @@ def save_info(results, file):
 
 def get_params(params, ctx):
     ''' Copy parameters to specific GPU
-    Usage: new_params = get_params(params, mx.gpu(0))'''
+    Usage: new_params = get_params(params, mxnet.gpu(0))'''
     new_params = [p.copyto(ctx) for p in params]
     for p in new_params:
         p.attach_grad()
@@ -111,7 +111,7 @@ def get_params(params, ctx):
 
 def allreduce(data):
     '''reduce data from all GPU and broadcast
-    Usage:  data = [nd.ones((1,2), ctx=mx.gpu(i)) * (i + 1) for i in range(2)]
+    Usage:  data = [nd.ones((1,2), ctx=mxnet.gpu(i)) * (i + 1) for i in range(2)]
             allreduce(data)'''
     for i in range(1, len(data)):
         data[0][:] += data[i].copyto(data[0].context)
@@ -121,7 +121,7 @@ def allreduce(data):
 
 def split_and_load(data, ctx, batch_axis=1):
     ''' Split data(seq_len, batch_size) into len(ctx_list) slices along batch_axis to each GPUs.
-    Usage:  ctx = [mx.gpu(0), mx.gpu(1)]
+    Usage:  ctx = [mxnet.gpu(0), mxnet.gpu(1)]
             splitted = split_and_load(data, ctx) '''
     n, k = data.shape[batch_axis], len(ctx)
     m = n // k
@@ -135,3 +135,17 @@ def get_mem():
            get_mem() - start '''
     res = subprocess.check_output(['ps', 'u', '-p', str(os.getpid())])
     return int(str(res).split()[15]) / 1e3
+
+def try_all_gpus():
+    """Return all available GPUs, or [mxnet.cpu()] if there is no GPU"""
+    ctxes = []
+    try:
+        for i in range(8):
+            ctx = mxnet.gpu(i)
+            _ = nd.array([0], ctx=ctx)
+            ctxes.append(ctx)
+    except:
+        pass
+    if not ctxes:
+        ctxes = [mxnet.cpu()]
+    return ctxes
