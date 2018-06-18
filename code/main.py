@@ -65,6 +65,8 @@ def configuration():
                         help='number of GPUs should be no more than the actual request gpus')
     parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                         help='report interval')
+    parser.add_argument('--log_freq', type=int, default=5, metavar='N',
+                        help='report frequency per epoch')
     parser.add_argument('--save', type=str,  default='Experiments',
                         help='path to save the final model')
     parser.add_argument('--alpha', type=float, default=2,
@@ -252,7 +254,7 @@ if __name__ == "__main__":
     else:
         # By default, use argparse for configuration
         if args.tied: args.hid_size = args.emb_size
-        args.log_interval = 929589 // (args.batch_size * args.bptt) // 10# log 10 times per epoch
+        args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
         if args.debug: args.log_interval = 2
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
         args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
