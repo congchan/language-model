@@ -175,7 +175,7 @@ def train_one_epoch(epoch, costs):
         ########################################################################
 
         # Schedual learning rate
-        # trainer.set_learning_rate(trainer.learning_rate * seq_len / args.bptt)
+        trainer.set_learning_rate(args.lr * seq_len / args.bptt)
 
         '''Each batch shape(seq_len, batch_size), split data to each device.
         m is the # of samples for each device, devided along batch_size axis.'''
