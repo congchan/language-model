@@ -222,7 +222,7 @@ def train_one_epoch(epoch, costs):
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
 
-            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.2f} | seq_len {:3d} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.3f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
                 epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
                 (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
