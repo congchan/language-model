@@ -5,13 +5,13 @@ def check_file(file):
     return os.path.exists(file) and os.path.isfile(file) and os.path.getsize(file)>0
 
 def detach(state):
-    if isinstance(state[0], (tuple, list)):
-        state = [ [i.detach() for i in s] for s in state]
-    elif isinstance(state, (tuple, list)):
-        state = [i.detach() for i in state]
-    else:
-        state = state.detach()
-    return state
+    if isinstance(state, (tuple, list)):
+        if isinstance(state[0], (tuple, list)):
+            if isinstance(state[0][0], (tuple, list)):
+                return [ [ [i.detach() for i in j] for j in s] for s in state]
+            return [ [i.detach() for i in s] for s in state]
+        return [i.detach() for i in state]
+    return state.detach()
 
 
 def batchify(data, batch_size):
