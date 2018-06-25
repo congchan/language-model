@@ -18,9 +18,9 @@ def configuration():
                         help='experiment suffix')
     parser.add_argument('--rnn_cell', type=str, default='lstm',
                         help='type of recurrent net (lstm, gru)')
-    parser.add_argument('--emb_size', type=int, default=400,
+    parser.add_argument('--emb_size', type=int, default=280,
                         help='size of word embeddings')
-    parser.add_argument('--hid_size', type=int, default=1150,
+    parser.add_argument('--hid_size', type=int, default=960,
                         help='number of hidden units per layer')
     parser.add_argument('--last_hid_size', type=int, default=-1,
                         help='number of hidden units for the last rnn layer\
