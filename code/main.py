@@ -325,7 +325,7 @@ if __name__ == "__main__":
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
                            drop_i=args.drop_i, drop_e=args.drop_e, l_dropout=args.drop_l, n_experts=args.n_experts)
     elif args.model == 'AWDRNN':
-        model = model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
+        model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
                      drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
     elif args.model == 'RNN':
