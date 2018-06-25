@@ -56,12 +56,12 @@ class RNN(gluon.Block):
 
 
 
-class AWDRNN(Block):
-    """AWD language model by salesforce.
+class MOSRNN(Block):
+    """Mos language model by Zhilin Yang, Zihang Dai, Ruslan Salakhutdinov, William W. Cohen.
 
-    Reference: https://github.com/salesforce/awd-lstm-lm
+    Reference: https://github.com/zihangdai/mos
 
-    License: BSD 3-Clause
+    License: MIT License
 
     Parameters
     ----------
@@ -88,25 +88,31 @@ class AWDRNN(Block):
     drop_e : float
         Dropout rate to use on the embedding layer.
     """
-    def __init__(self, mode, vocab_size, embed_size, hidden_size, n_layers,
-                 tie_weights=False, dropout=0.5, weight_drop=0, drop_h=0.5, drop_i=0.5, drop_e=0,
-                 **kwargs):
-        super(AWDRNN, self).__init__(**kwargs)
+    def __init__(self, mode, vocab_size, embed_size, hidden_size, hidden_size_last, n_layers,
+                 tie_weights=False, dropout=0.5, weight_drop=0, drop_h=0.5, drop_i=0.5, drop_e=0.1,
+                 l_dropout=0.5, n_experts=10, **kwargs):
+        super(MOSRNN, self).__init__(**kwargs)
         self._mode = mode
         self._vocab_size = vocab_size
         self._embed_size = embed_size
         self._hidden_size = hidden_size
+        self._hidden_size_last = hidden_size_last
         self._n_layers = n_layers
         self._dropout = dropout
         self._drop_h = drop_h
         self._drop_i = drop_i
         self._drop_e = drop_e
+        self._l_dropout = l_dropout
+        self._dropout_l = l_dropout
+        self._n_experts = n_experts
         self._weight_drop = weight_drop
         self._tie_weights = tie_weights
 
         with self.name_scope():
             self.embedding = self._get_embedding()
             self.encoder = self._get_encoder()
+            self.prior = nn.Dense(n_experts, use_bias=False, flatten=False) # n_experts as output size, in_units will be inferred as last hid size
+            self.latent = nn.Dense(n_experts * hidden_size, 'tanh', flatten=False)
             self.decoder = self._get_decoder()
 
     def _get_embedding(self):
@@ -127,8 +133,8 @@ class AWDRNN(Block):
             for l in range(self._n_layers):
                 encoder.add(_get_rnn_layer(self._mode, 1, self._embed_size if l == 0 else
                                            self._hidden_size, self._hidden_size if
-                                           l != self._n_layers - 1 or not self._tie_weights
-                                           else self._embed_size, 0, self._weight_drop))
+                                           l != self._n_layers - 1 else self._hidden_size_last,
+                                           0, self._weight_drop))
         return encoder
 
     def _get_decoder(self):
@@ -144,7 +150,7 @@ class AWDRNN(Block):
     def begin_state(self, *args, **kwargs):
         return [c.begin_state(*args, **kwargs) for c in self.encoder]
 
-    def forward(self, inputs, begin_state=None):
+    def forward(self, inputs, begin_state=None, return_h=False, return_prob=False):
         """Implement forward computation.
 
         Parameters
@@ -162,16 +168,38 @@ class AWDRNN(Block):
             The list of output states of the model's encoder.
         """
         encoded = self.embedding(inputs)
-        if not begin_state:
-            begin_state = self.begin_state(batch_size=inputs.shape[1])
+        # if not begin_state:
+        #     begin_state = self.begin_state(batch_size=inputs.shape[0])
         out_states = []
+        raw_encodeds = []
+        encodeds = []
         for i, (e, s) in enumerate(zip(self.encoder, begin_state)):
             encoded, state = e(encoded, s)
+            raw_encodeds.append(encoded)
             out_states.append(state)
             if self._drop_h and i != len(self.encoder)-1:
                 encoded = nd.Dropout(encoded, p=self._drop_h, axes=(0,))
+                encodeds.append(encoded)
         if self._dropout:
             encoded = nd.Dropout(encoded, p=self._dropout, axes=(0,))
-        with autograd.predict_mode():
-            out = self.decoder(encoded)
-        return out, out_states
+        states = out_states
+        encodeds.append(encoded)
+
+        latent = nd.Dropout(self.latent(encoded), p=self._dropout_l, axes=(0,))
+        logit = self.decoder(latent.reshape(-1, self._embed_size))
+        prior_logit = self.prior(encoded).reshape(-1, self._n_experts)
+        prior = nd.softmax(prior_logit)
+        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._n_experts, self._vocab_size)
+        prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
+
+        if return_prob:
+            model_output = prob
+        else:
+            log_prob = nd.log(nd.add(prob, 1e-8))
+            model_output = log_prob
+
+        model_output = model_output.reshape(inputs.shape[0], -1, self._vocab_size)
+
+        if return_h:
+            return model_output, out_states, raw_encodeds, encodeds
+        return model_output, out_states

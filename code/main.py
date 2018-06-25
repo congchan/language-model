@@ -321,9 +321,9 @@ if __name__ == "__main__":
         args.small_batch_size = args.batch_size
 
     if args.model == 'MOS':
-        model = model.MOS(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.nlayers,
-                           args.dropout, args.drop_h, args.drop_i, args.drop_e, args.w_drop,
-                           args.tied, args.drop_l, args.n_experts)
+        model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.n_layers,
+                           tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
+                           drop_i=args.drop_i, drop_e=args.drop_e, l_dropout=args.drop_l, n_experts=args.n_experts)
     elif args.model == 'AWDRNN':
         model = model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
