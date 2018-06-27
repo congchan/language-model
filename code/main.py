@@ -177,7 +177,7 @@ def train_one_epoch(epoch, costs):
         ########################################################################
 
         # Schedual learning rate
-        trainer.set_learning_rate(args.lr * seq_len / args.bptt)
+        # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
 
         '''Each batch shape(seq_len, batch_size), split data to each device.
         m is the # of samples for each device, devided along batch_size axis.'''
@@ -343,8 +343,9 @@ if __name__ == "__main__":
     else:
         model.initialize(init.Xavier(), ctx=ctxs)
 
+    lr_sch = mxnet.lr_scheduler.FactorScheduler(step=30, factor=0.9) # base_lr * pow(factor, floor(num_update/step))
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                {'learning_rate': args.lr, 'wd': args.wdecay})
+                {'learning_rate': args.lr, 'wd': args.wdecay, 'lr_scheduler': lr_sch})
 
     if args.continue_exprm and utils.check_file(trainer_states):
         trainer.load_states(trainer_states)
