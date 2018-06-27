@@ -77,7 +77,9 @@ def configuration():
                         help='optimizer in trainer: SGD, Adam, RMSProp, ... ' )
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
-    parser.add_argument('--n_experts', type=int, default=10,
+    parser.add_argument('--momentum', type=float, default=0.99,
+                        help='momentum update')
+    parser.add_argument('--n_experts', type=int, default=15,
                         help='number of experts')
     parser.add_argument('--small_batch_size', type=int, default=-1,
                         help='the batch size for computation. batch_size should be divisible by small_batch_size.\
