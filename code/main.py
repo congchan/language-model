@@ -156,13 +156,15 @@ def train():
             logging.info('Performance improving, saving Model')
             best_loss = val_loss
         else:
-            # Schedual learning rate
-            schedual_lr()
-
+            logging.info('Performance not improving, anneal learning rate to {}'.format(
+                                                                        schedual_lr()))
 
 def schedual_lr():
     # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
-    trainer.set_learning_rate(args.momentum * trainer.learning_rate)
+    lr = args.momentum * trainer.learning_rate
+    trainer.set_learning_rate(lr)
+    return lr
+
 
 def train_one_epoch(epoch, costs):
     ''' Train all the batches within one epoch.
