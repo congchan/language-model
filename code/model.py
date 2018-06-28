@@ -112,7 +112,7 @@ class MOSRNN(Block):
             self.embedding = self._get_embedding()
             self.encoder = self._get_encoder()
             self.prior = nn.Dense(n_experts, use_bias=False, flatten=False) # n_experts as output size, in_units will be inferred as last hid size
-            self.latent = nn.Dense(n_experts * hidden_size, 'tanh', flatten=False)
+            self.latent = nn.Dense(n_experts * embed_size, 'tanh', flatten=False)
             self.decoder = self._get_decoder()
 
     def _get_embedding(self):
