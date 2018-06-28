@@ -170,6 +170,7 @@ def train_one_epoch(epoch, costs):
     ''' Train all the batches within one epoch.
     costs is the container created once and reuse for efficiency'''
 
+    best_train_loss = 0.0
     total_loss = 0
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
 
@@ -229,8 +230,11 @@ def train_one_epoch(epoch, costs):
 
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
+            if total_loss > best_train_loss:
+                total_loss = best_train_loss
+                schedual_lr()
 
-            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.3f} | seq_len {:3d} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
                 epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
                 (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
