@@ -307,7 +307,7 @@ if __name__ == "__main__":
     logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens".format(
                     len(corpus.train), len(corpus.valid), len(corpus.test)))
 
-    eval_batch_size = 10 * len(ctxs)
+    eval_batch_size = 4 * len(ctxs)
     test_batch_size = 1 * len(ctxs)
 
     train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
