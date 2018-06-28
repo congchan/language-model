@@ -265,7 +265,8 @@ if __name__ == "__main__":
 
     else:
         # By default, use argparse for configuration
-        if args.tied: args.hid_size = args.emb_size
+        if args.tied and (args.model == 'RNN' or args.model == 'StandardRNN'):
+            args.hid_size = args.emb_size
         args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
         if args.debug: args.log_interval = 2
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
