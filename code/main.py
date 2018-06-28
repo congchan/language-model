@@ -25,7 +25,7 @@ def configuration():
     parser.add_argument('--last_hid_size', type=int, default=-1,
                         help='number of hidden units for the last rnn layer\
                         by default equal to hid_size')
-    parser.add_argument('--n_layers', type=int, default=1,
+    parser.add_argument('--n_layers', type=int, default=3,
                         help='number of layers')
     parser.add_argument('--lr', type=float, default=3,
                         help='initial learning rate')
