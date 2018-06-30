@@ -155,9 +155,6 @@ def train():
             save_checkpoint(model, trainer, path)
             logging.info('Performance improving, saving Model')
             best_loss = val_loss
-        else:
-            logging.info('Performance not improving, anneal learning rate to {}'.format(
-                                                                        schedual_lr()))
 
 def schedual_lr():
     # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
@@ -170,7 +167,6 @@ def train_one_epoch(epoch, costs):
     ''' Train all the batches within one epoch.
     costs is the container created once and reuse for efficiency'''
 
-    best_train_loss = 0.0
     total_loss = 0
     states = [model.begin_state(batch_size=m, ctx=ctx) for ctx in ctxs]
 
@@ -185,6 +181,8 @@ def train_one_epoch(epoch, costs):
         seq_len = max(5, int(np.random.normal(random_bptt, 5)))
         # There's a very small chance that it could select a very long sequence length resulting in OOM
         seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
+        # Schedual learning rate
+        trainer.set_learning_rate(args.lr * seq_len / args.bptt)
         ########################################################################
 
 
@@ -230,9 +228,6 @@ def train_one_epoch(epoch, costs):
 
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
-            if total_loss > best_train_loss:
-                total_loss = best_train_loss
-                schedual_lr()
 
             logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
