@@ -39,16 +39,16 @@ def configuration():
                         help='sequence length')
     parser.add_argument('--debug', type=int, default=0,
                         help='debug mode sepcify the tokenize length for faster debugging')
-    parser.add_argument('--dropout', type=float, default=0.4,
+    parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout applied to layers (0 = no dropout)')
     parser.add_argument('--drop_h', type=float, default=0.3,
-                        help='dropout for rnn layers (0 = no dropout)')
-    parser.add_argument('--drop_i', type=float, default=0.65,
-                        help='dropout for input embedding layers (0 = no dropout)')
+                        help='dropout for rnn layers (0 = no dropout), context vector V-drop 0.3')
+    parser.add_argument('--drop_i', type=float, default=0.55,
+                        help='dropout for input embedding layers (0 = no dropout), emb V-drop 0.55')
     parser.add_argument('--drop_e', type=float, default=0.1,
-                        help='dropout to remove words from embedding layer (0 = no dropout)')
+                        help='dropout to remove words from embedding layer (0 = no dropout), word level V-drop 0.1')
     parser.add_argument('--drop_l', type=float, default=-0.2,
-                        help='dropout applied to layers (0 = no dropout)')
+                        help='dropout applied to latent layers (0 = no dropout)')
     parser.add_argument('--w_drop', type=float, default=0.5,
                         help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
     parser.add_argument('--tied', action='store_false',
@@ -181,7 +181,7 @@ def train_one_epoch(epoch, costs):
         seq_len = max(5, int(np.random.normal(random_bptt, 5)))
         # There's a very small chance that it could select a very long sequence length resulting in OOM
         seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
-        # Schedual learning rate
+        # Rescale learning rate depending on the variable length w.r.t bptt
         trainer.set_learning_rate(args.lr * seq_len / args.bptt)
         ########################################################################
 
