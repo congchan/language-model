@@ -30,13 +30,13 @@ class Dictionary(object):
 
 
 class Corpus(object):
-    def __init__(self, data, debug=0):
+    def __init__(self, data, debug=0, predict_only=False):
         self.dictionary = Dictionary()
         path = os.path.join('data', data)
         self.debug = debug
-        self.train = self.tokenize(os.path.join(path, 'train.txt'))
-        self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
-        self.test = self.tokenize(os.path.join(path, 'test.txt'))
+        self.train = [] if predict_only else self.tokenize(os.path.join(path, 'train.txt'))
+        self.valid = [] if predict_only else self.tokenize(os.path.join(path, 'valid.txt'))
+        self.test = [] if debug else self.tokenize(os.path.join(path, 'test.txt'))
 
 
     def tokenize(self, path, ctx=None):

@@ -255,7 +255,8 @@ if __name__ == "__main__":
         configfile = os.path.join(path, 'config.json')
 
         try: args = data.Config(utils.read_config(configfile,
-                                        {'continue_exprm':args.continue_exprm}))
+                                        {'continue_exprm':args.continue_exprm,
+                                        'predict_only':args.predict_only}))
         except FileNotFoundError: raise
 
     else:
@@ -299,16 +300,18 @@ if __name__ == "__main__":
     # Load data
     ###############################################################################
 
-    corpus = data.Corpus(args.data, args.debug)
+    corpus = data.Corpus(args.data, args.debug, args.predict_only)
     logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens".format(
                     len(corpus.train), len(corpus.valid), len(corpus.test)))
 
     eval_batch_size = 4 * len(ctxs)
     test_batch_size = 1 * len(ctxs)
 
-    train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
-    val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
-    test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
+    if not args.predict_only:
+        train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
+        val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
+    if not args.debug:
+        test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
 
     ###############################################################################
     # Build the model
