@@ -34,7 +34,7 @@ class Corpus(object):
         self.dictionary = Dictionary()
         path = os.path.join('data', data)
         self.debug = debug
-        self.train = [] if predict_only else self.tokenize(os.path.join(path, 'train.txt'))
+        self.train = self.tokenize(os.path.join(path, 'train.txt'))
         self.valid = [] if predict_only else self.tokenize(os.path.join(path, 'valid.txt'))
         self.test = [] if debug else self.tokenize(os.path.join(path, 'test.txt'))
 
