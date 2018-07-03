@@ -22,7 +22,7 @@ def configuration():
                         help='size of word embeddings')
     parser.add_argument('--hid_size', type=int, default=960,
                         help='number of hidden units per layer')
-    parser.add_argument('--last_hid_size', type=int, default=-1,
+    parser.add_argument('--last_hid_size', type=int, default=620,
                         help='number of hidden units for the last rnn layer\
                         by default equal to hid_size')
     parser.add_argument('--n_layers', type=int, default=3,
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     if args.model == 'MOS':
         model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.n_layers,
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
-                           drop_i=args.drop_i, drop_e=args.drop_e, l_dropout=args.drop_l, n_experts=args.n_experts)
+                           drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, n_experts=args.n_experts)
     elif args.model == 'AWDRNN':
         model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
