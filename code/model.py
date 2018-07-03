@@ -73,6 +73,8 @@ class MOSRNN(Block):
         Dimension of embedding vectors.
     hidden_size : int
         Number of hidden units for RNN.
+    hidden_size_last : int
+        Number of last hidden units for RNN.
     n_layers : int
         Number of RNN layers.
     tie_weights : bool, default False
@@ -87,10 +89,14 @@ class MOSRNN(Block):
         Dropout rate to on the output of embedding.
     drop_e : float
         Dropout rate to use on the embedding layer.
+    drop_l : float
+        Dropout rate to use on the latent layer.
+    n_experts : int
+        Number of softmax.
     """
-    def __init__(self, mode, vocab_size, embed_size, hidden_size, hidden_size_last, n_layers,
-                 tie_weights=False, dropout=0.5, weight_drop=0, drop_h=0.5, drop_i=0.5, drop_e=0.1,
-                 l_dropout=0.5, n_experts=10, **kwargs):
+    def __init__(self, mode, vocab_size, embed_size=280, hidden_size=960, hidden_size_last=620,
+                 n_layers=3, tie_weights=False, dropout=0.2, weight_drop=0.5, drop_h=0.3,
+                 drop_i=0.55, drop_e=0.1, drop_l=0.3, n_experts=15, **kwargs):
         super(MOSRNN, self).__init__(**kwargs)
         self._mode = mode
         self._vocab_size = vocab_size
@@ -102,8 +108,7 @@ class MOSRNN(Block):
         self._drop_h = drop_h
         self._drop_i = drop_i
         self._drop_e = drop_e
-        self._l_dropout = l_dropout
-        self._dropout_l = l_dropout
+        self._drop_l = drop_l
         self._n_experts = n_experts
         self._weight_drop = weight_drop
         self._tie_weights = tie_weights
@@ -185,7 +190,7 @@ class MOSRNN(Block):
         states = out_states
         encodeds.append(encoded)
 
-        latent = nd.Dropout(self.latent(encoded), p=self._dropout_l, axes=(0,))
+        latent = nd.Dropout(self.latent(encoded), p=self._drop_l, axes=(0,))
         logit = self.decoder(latent.reshape(-1, self._embed_size))
         prior_logit = self.prior(encoded).reshape(-1, self._n_experts)
         prior = nd.softmax(prior_logit)
