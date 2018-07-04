@@ -30,14 +30,14 @@ class RNN(gluon.Block):
                 When using the tied weight, hid_size must be equal to emb_size
                 '''
                 # output tensor (sequence_length, batch_size, num_hidden) when layout is “TNC”
-                self.encoder = rnn.LSTM(args.hid_size, args.n_layers)
+                self.encoder = rnn.LSTM(args.hid_size, args.num_layers)
 
                 self.in_units = args.emb_size
                 self.decoder.add(nn.Dense(vocab_size, flatten=False,
                                             in_units=self.in_units,
                                             params=self.embedding[0].params))
             else:
-                self.encoder = rnn.LSTM(args.emb_size, args.n_layers)
+                self.encoder = rnn.LSTM(args.emb_size, args.num_layers)
                 self.in_units = args.last_hid_size
                 self.decoder.add(nn.Dense(vocab_size, flatten=False,
                                             in_units=self.in_units))
@@ -75,7 +75,7 @@ class MOSRNN(Block):
         Number of hidden units for RNN.
     hidden_size_last : int
         Number of last hidden units for RNN.
-    n_layers : int
+    num_layers : int
         Number of RNN layers.
     tie_weights : bool, default False
         Whether to tie the weight matrices of output dense layer and input embedding layer.
@@ -95,7 +95,7 @@ class MOSRNN(Block):
         Number of softmax.
     """
     def __init__(self, mode, vocab_size, embed_size=280, hidden_size=960, hidden_size_last=620,
-                 n_layers=3, tie_weights=False, dropout=0.2, weight_drop=0.5, drop_h=0.3,
+                 num_layers=3, tie_weights=False, dropout=0.2, weight_drop=0.5, drop_h=0.3,
                  drop_i=0.55, drop_e=0.1, drop_l=0.3, n_experts=15, **kwargs):
         super(MOSRNN, self).__init__(**kwargs)
         self._mode = mode
@@ -103,7 +103,7 @@ class MOSRNN(Block):
         self._embed_size = embed_size
         self._hidden_size = hidden_size
         self._hidden_size_last = hidden_size_last
-        self._n_layers = n_layers
+        self._num_layers = num_layers
         self._dropout = dropout
         self._drop_h = drop_h
         self._drop_i = drop_i
@@ -135,10 +135,10 @@ class MOSRNN(Block):
     def _get_encoder(self):
         encoder = nn.Sequential()
         with encoder.name_scope():
-            for l in range(self._n_layers):
+            for l in range(self._num_layers):
                 encoder.add(_get_rnn_layer(self._mode, 1, self._embed_size if l == 0 else
                                            self._hidden_size, self._hidden_size if
-                                           l != self._n_layers - 1 else self._hidden_size_last,
+                                           l != self._num_layers - 1 else self._hidden_size_last,
                                            0, self._weight_drop))
         return encoder
 
@@ -173,22 +173,22 @@ class MOSRNN(Block):
             The list of output states of the model's encoder.
         """
         encoded = self.embedding(inputs)
-        # if not begin_state:
-        #     begin_state = self.begin_state(batch_size=inputs.shape[0])
+        if not begin_state:
+            begin_state = self.begin_state(batch_size=inputs.shape[1])
         out_states = []
-        raw_encodeds = []
-        encodeds = []
+        encoded_raw = []
+        encoded_dropped = []
         for i, (e, s) in enumerate(zip(self.encoder, begin_state)):
             encoded, state = e(encoded, s)
-            raw_encodeds.append(encoded)
+            encoded_raw.append(encoded)
             out_states.append(state)
             if self._drop_h and i != len(self.encoder)-1:
                 encoded = nd.Dropout(encoded, p=self._drop_h, axes=(0,))
-                encodeds.append(encoded)
+                encoded_dropped.append(encoded)
         if self._dropout:
             encoded = nd.Dropout(encoded, p=self._dropout, axes=(0,))
         states = out_states
-        encodeds.append(encoded)
+        encoded_dropped.append(encoded)
 
         latent = nd.Dropout(self.latent(encoded), p=self._drop_l, axes=(0,))
         logit = self.decoder(latent.reshape(-1, self._embed_size))
@@ -198,13 +198,13 @@ class MOSRNN(Block):
         prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
 
         if return_prob:
-            model_output = prob
+            out = prob
         else:
             log_prob = nd.log(nd.add(prob, 1e-8))
-            model_output = log_prob
+            out = log_prob
 
-        model_output = model_output.reshape(inputs.shape[0], -1, self._vocab_size)
+        out = out.reshape(inputs.shape[0], -1, self._vocab_size)
 
         if return_h:
-            return model_output, out_states, raw_encodeds, encodeds
-        return model_output, out_states
+            return out, out_states, encoded_raw, encoded_dropped
+        return out, out_states
