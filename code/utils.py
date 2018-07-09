@@ -4,14 +4,23 @@ def check_file(file):
     ''' Check if file is valid'''
     return os.path.exists(file) and os.path.isfile(file) and os.path.getsize(file)>0
 
-def detach(state):
-    if isinstance(state, (tuple, list)):
-        if isinstance(state[0], (tuple, list)):
-            if isinstance(state[0][0], (tuple, list)):
-                return [ [ [i.detach() for i in j] for j in s] for s in state]
-            return [ [i.detach() for i in s] for s in state]
-        return [i.detach() for i in state]
-    return state.detach()
+
+def detach(hidden):
+    """Transfer hidden states into new states, to detach them from the history.
+    Parameters
+    ----------
+    hidden : NDArray
+        The hidden states
+    Returns
+    ----------
+    hidden: NDArray
+        The detached hidden states
+    """
+    if isinstance(hidden, (tuple, list)):
+        hidden = [detach(h) for h in hidden]
+    else:
+        hidden = hidden.detach()
+    return hidden
 
 
 def batchify(data, batch_size):
