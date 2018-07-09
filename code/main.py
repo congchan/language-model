@@ -201,7 +201,7 @@ def train_one_epoch(epoch, costs):
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
                  output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
-                 costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
+                 costs[i]= loss(output, Ys[i]) # loss (m,)
 
         for c in costs:
             c.backward()
@@ -210,13 +210,13 @@ def train_one_epoch(epoch, costs):
         # 因此我们将 clipping_theta 乘以 seq_len 和 batch_size。
         grads = [p.grad(ctx) for ctx in ctxs for p in model.collect_params().values()]
         gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
-        trainer.step(1)
+        trainer.step(args.batch_size)
 
         costs_cpu = [0] * len(ctxs)
         for i, c in enumerate(costs):
             costs_cpu[i] = c.as_in_context(mxnet.cpu())
 
-        batch_cost = (sum(costs_cpu)/len(costs_cpu)).asscalar() # this will synchronize all GPUs
+        batch_cost = (np.sum(costs_cpu) / args.batch_size).asscalar() # this will synchronize all GPUs
 
         batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
                       (time.time() - tic_b) * 1000, batch_cost, math.exp(batch_cost) ])
