@@ -12,7 +12,7 @@ def configuration():
                         help='continue experiment from a checkpoint')
     parser.add_argument('--data', type=str, default='penn',
                         help='which data corpus: penn, wikitext-2')
-    parser.add_argument('--model', type=str, default='Mos',
+    parser.add_argument('--model', type=str, default='MOS',
                         help='Model, options (RNN, MOS, StandardRNN, AWDRNN)')
     parser.add_argument('--exprm', type=str, default='',
                         help='experiment suffix')
@@ -25,7 +25,7 @@ def configuration():
     parser.add_argument('--last_hid_size', type=int, default=620,
                         help='number of hidden units for the last rnn layer\
                         by default equal to hid_size')
-    parser.add_argument('--n_layers', type=int, default=3,
+    parser.add_argument('--num_layers', type=int, default=3,
                         help='number of layers')
     parser.add_argument('--lr', type=float, default=3,
                         help='initial learning rate')
@@ -33,7 +33,7 @@ def configuration():
                         help='gradient clipping')
     parser.add_argument('--epochs', type=int, default=8000,
                         help='upper epoch limit')
-    parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=8, metavar='N',
                         help='batch size')
     parser.add_argument('--bptt', type=int, default=70,
                         help='sequence length')
@@ -77,8 +77,8 @@ def configuration():
                         help='optimizer in trainer: SGD, Adam, RMSProp, ... ' )
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
-    parser.add_argument('--momentum', type=float, default=0.99,
-                        help='momentum update')
+    parser.add_argument('--schedual_rate', type=float, default=0.1,
+                        help='schedual_rate update')
     parser.add_argument('--n_experts', type=int, default=15,
                         help='number of experts')
     parser.add_argument('--small_batch_size', type=int, default=-1,
@@ -115,7 +115,7 @@ def evaluate(data_source, batch_size):
 
         for i, X in enumerate(Xs):
             # By default, MXNet is in predict_mode
-            output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
+            output, states[i] = model(X, states[i]) # state(num_layers, bsz, hidden_size)
             costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
 
         costs_cpu = [0] * len(ctxs)
@@ -200,7 +200,7 @@ def train_one_epoch(epoch, costs):
 
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, states[i] = model(X, states[i]) # state(n_layers, bsz, hidden_size)
+                 output, states[i] = model(X, states[i]) # state(num_layers, bsz, hidden_size)
                  costs[i]= loss(output, Ys[i]) # loss (m,)
 
         for c in costs:
@@ -332,18 +332,18 @@ if __name__ == "__main__":
         args.small_batch_size = args.batch_size
 
     if args.model == 'MOS':
-        model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.n_layers,
+        model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.num_layers,
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
                            drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, n_experts=args.n_experts)
     elif args.model == 'AWDRNN':
-        model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.n_layers,
+        model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
                      drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
     elif args.model == 'RNN':
         model = model.RNN(vocab_size, args)
     elif args.model == 'StandardRNN':
         model = gluonnlp.model.StandardRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size,
-                                        args.n_layers, dropout=args.dropout, tie_weights=args.tied)
+                                        args.num_layers, dropout=args.dropout, tie_weights=args.tied)
 
 
     loss = gluon.loss.SoftmaxCrossEntropyLoss(batch_axis=1)
