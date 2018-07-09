@@ -2,6 +2,7 @@
 import math, time, argparse, os, sys, logging, gluonnlp, mxnet
 import numpy as np
 import data, model, utils
+from JointActivationRegularizationLoss import JointActivationRegularizationLoss
 from mxnet import gluon, nd, init, autograd
 from utils import batchify, get_batch, detach, create_exp_dir, save_checkpoint
 
@@ -134,8 +135,6 @@ def train():
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
-    costs_container = [nd.array([0], ctx=ctx) for ctx in ctxs]
-
     logging.info('-' * 40 + "Begin training" + '-' * 40)
     # Loop over epochs.
     best_loss = float("Inf")
@@ -143,7 +142,7 @@ def train():
 
         cur_lr = trainer.learning_rate
         tic = time.time()
-        train_one_epoch(epoch, costs_container, cur_lr)
+        train_one_epoch(epoch, cur_lr)
         val_loss = evaluate(val_data, eval_batch_size)
         toc = time.time()
         trainer.set_learning_rate(cur_lr)
@@ -171,7 +170,7 @@ def schedual_lr(cur_lr):
     return lr
 
 
-def train_one_epoch(epoch, costs, cur_lr):
+def train_one_epoch(epoch, cur_lr):
     ''' Train all the batches within one epoch.
     costs is the container created once and reuse for efficiency'''
 
@@ -205,31 +204,25 @@ def train_one_epoch(epoch, costs, cur_lr):
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
         states = detach(states)
-
+        loss_list = []
+        LOSS = 0
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, states[i] = model(X, states[i]) # state(num_layers, bsz, hidden_size)
-                 costs[i]= loss(output, Ys[i]) # loss (m,)
+                 output, states[i], encoded_raw, encoded_dropped = model(X, states[i], True) # state(num_layers, bsz, hidden_size)
+                 device_loss = joint_loss(output, Ys[i], encoded_raw, encoded_dropped)
+                 LOSS = LOSS + device_loss.as_in_context(ctxs[0]) / X.size
+                 loss_list.append(device_loss / X.size)
+        LOSS.backward()
 
-        for c in costs:
-            c.backward()
+        grads = [p.grad(ctx) for ctx in ctxs for p in parameters]
+        gluon.utils.clip_global_norm(grads, args.clipping_theta)
+        trainer.step(1)
 
-        # 梯度裁剪。需要注意的是，这里的梯度是整个批量的梯度。
-        # 因此我们将 clipping_theta 乘以 seq_len 和 batch_size。
-        grads = [p.grad(ctx) for ctx in ctxs for p in model.collect_params().values()]
-        gluon.utils.clip_global_norm(grads, args.clipping_theta * seq_len *args.batch_size)
-        trainer.step(args.batch_size)
-
-        costs_cpu = [0] * len(ctxs)
-        for i, c in enumerate(costs):
-            costs_cpu[i] = c.as_in_context(mxnet.cpu())
-
-        batch_cost = (np.sum(costs_cpu) / args.batch_size).asscalar() # this will synchronize all GPUs
-
+        batch_loss = sum([nd.sum(l).asscalar() for l in loss_list]) / len(ctxs)
         batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
-                      (time.time() - tic_b) * 1000, batch_cost, math.exp(batch_cost) ])
+                      (time.time() - tic_b) * 1000, batch_loss, math.exp(batch_loss) ])
 
-        total_loss += batch_cost
+        total_loss += batch_loss
 
         if batch % args.log_interval == 0 and batch > 0:
             utils.save_info(batch_info, batch_file)
@@ -249,7 +242,7 @@ def train_one_epoch(epoch, costs, cur_lr):
         batch += 1
         cursor += seq_len
 
-        nd.waitall() # synchronize batch data
+    nd.waitall() # synchronize batch data
     ############################################################################
 
 def load_model():
@@ -364,7 +357,11 @@ if __name__ == "__main__":
                                         args.num_layers, dropout=args.dropout, tie_weights=args.tied)
 
 
-    loss = gluon.loss.SoftmaxCrossEntropyLoss(batch_axis=1)
+    loss = gluon.loss.SoftmaxCrossEntropyLoss()
+    ar_loss = gluonnlp.loss.ActivationRegularizationLoss(args.alpha)
+    tar_loss = gluonnlp.loss.TemporalActivationRegularizationLoss(args.beta)
+    joint_loss = JointActivationRegularizationLoss(loss, ar_loss, tar_loss)
+
     model.initialize(init.Xavier(), ctx=ctxs)
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
                 {'learning_rate': args.lr, 'wd': args.wdecay})
@@ -372,6 +369,7 @@ if __name__ == "__main__":
     if args.continue_exprm:
         load_model()
 
+    parameters = model.collect_params().values()
     # At any point you can hit Ctrl + C to break out of training early.
     try:
         if not args.predict_only: train()
