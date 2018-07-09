@@ -91,12 +91,12 @@ class MOSRNN(Block):
         Dropout rate to use on the embedding layer.
     drop_l : float
         Dropout rate to use on the latent layer.
-    n_experts : int
+    num_experts : int
         Number of softmax.
     """
     def __init__(self, mode, vocab_size, embed_size=280, hidden_size=960, hidden_size_last=620,
                  num_layers=3, tie_weights=False, dropout=0.2, weight_drop=0.5, drop_h=0.3,
-                 drop_i=0.55, drop_e=0.1, drop_l=0.3, n_experts=15, **kwargs):
+                 drop_i=0.55, drop_e=0.1, drop_l=0.3, num_experts=15, **kwargs):
         super(MOSRNN, self).__init__(**kwargs)
         self._mode = mode
         self._vocab_size = vocab_size
@@ -109,15 +109,15 @@ class MOSRNN(Block):
         self._drop_i = drop_i
         self._drop_e = drop_e
         self._drop_l = drop_l
-        self._n_experts = n_experts
+        self._num_experts = num_experts
         self._weight_drop = weight_drop
         self._tie_weights = tie_weights
 
         with self.name_scope():
             self.embedding = self._get_embedding()
             self.encoder = self._get_encoder()
-            self.prior = nn.Dense(n_experts, use_bias=False, flatten=False) # n_experts as output size, in_units will be inferred as last hid size
-            self.latent = nn.Dense(n_experts * embed_size, 'tanh', flatten=False)
+            self.prior = nn.Dense(num_experts, use_bias=False, flatten=False) # num_experts as output size, in_units will be inferred as last hid size
+            self.latent = nn.Dense(num_experts * embed_size, 'tanh', flatten=False)
             self.decoder = self._get_decoder()
 
     def _get_embedding(self):
@@ -192,9 +192,9 @@ class MOSRNN(Block):
 
         latent = nd.Dropout(self.latent(encoded), p=self._drop_l, axes=(0,))
         logit = self.decoder(latent.reshape(-1, self._embed_size))
-        prior_logit = self.prior(encoded).reshape(-1, self._n_experts)
+        prior_logit = self.prior(encoded).reshape(-1, self._num_experts)
         prior = nd.softmax(prior_logit)
-        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._n_experts, self._vocab_size)
+        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._num_experts, self._vocab_size)
         prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
 
         if return_prob:

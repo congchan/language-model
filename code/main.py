@@ -79,7 +79,7 @@ def configuration():
                         help='weight decay applied to all weights')
     parser.add_argument('--schedual_rate', type=float, default=0.1,
                         help='schedual_rate update')
-    parser.add_argument('--n_experts', type=int, default=15,
+    parser.add_argument('--num_experts', type=int, default=15,
                         help='number of experts')
     parser.add_argument('--small_batch_size', type=int, default=-1,
                         help='the batch size for computation. batch_size should be divisible by small_batch_size.\
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     if args.model == 'MOS':
         model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.num_layers,
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
-                           drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, n_experts=args.n_experts)
+                           drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, num_experts=args.num_experts)
     elif args.model == 'AWDRNN':
         model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
