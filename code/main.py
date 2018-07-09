@@ -140,10 +140,14 @@ def train():
     # Loop over epochs.
     best_loss = float("Inf")
     for epoch in range(args.epochs):
+
+        cur_lr = trainer.learning_rate
         tic = time.time()
-        train_one_epoch(epoch, costs_container)
+        train_one_epoch(epoch, costs_container, cur_lr)
         val_loss = evaluate(val_data, eval_batch_size)
         toc = time.time()
+        trainer.set_learning_rate(cur_lr)
+
         logging.info('-' * 89)
         logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.3f} | '
                 'valid ppl {:8.2f}'.format(epoch, toc - tic, val_loss, math.exp(val_loss)))
@@ -155,15 +159,19 @@ def train():
             save_checkpoint(model, trainer, path)
             logging.info('Performance improving, saving Model')
             best_loss = val_loss
+        else:
+            load_model()
+            logging.info('No improvement, anneal lr to {}'.format(
+                                schedual_lr(cur_lr)))
 
-def schedual_lr():
+def schedual_lr(cur_lr):
     # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
-    lr = args.momentum * trainer.learning_rate
+    lr = args.schedual_rate * cur_lr
     trainer.set_learning_rate(lr)
     return lr
 
 
-def train_one_epoch(epoch, costs):
+def train_one_epoch(epoch, costs, cur_lr):
     ''' Train all the batches within one epoch.
     costs is the container created once and reuse for efficiency'''
 
@@ -182,7 +190,7 @@ def train_one_epoch(epoch, costs):
         # There's a very small chance that it could select a very long sequence length resulting in OOM
         seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
         # Rescale learning rate depending on the variable length w.r.t bptt
-        trainer.set_learning_rate(args.lr * seq_len / args.bptt)
+        trainer.set_learning_rate(cur_lr * seq_len / args.bptt)
         ########################################################################
 
 
@@ -243,6 +251,16 @@ def train_one_epoch(epoch, costs):
 
         nd.waitall() # synchronize batch data
     ############################################################################
+
+def load_model():
+    if utils.check_file(params):
+        model.load_params(params, ctx=ctxs)
+        logging.info("Loading parameters from : {}".format(params))
+
+    if utils.check_file(trainer_states):
+        trainer.load_states(trainer_states)
+        logging.info("Loading training states from : {}".format(trainer_states))
+
 
 if __name__ == "__main__":
     ###############################################################################
@@ -347,19 +365,12 @@ if __name__ == "__main__":
 
 
     loss = gluon.loss.SoftmaxCrossEntropyLoss(batch_axis=1)
-
-    if args.continue_exprm and utils.check_file(params):
-        model.load_params(params, ctx=ctxs)
-        logging.info("Loading parameters from : {}".format(params))
-    else:
-        model.initialize(init.Xavier(), ctx=ctxs)
-
+    model.initialize(init.Xavier(), ctx=ctxs)
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
                 {'learning_rate': args.lr, 'wd': args.wdecay})
 
-    if args.continue_exprm and utils.check_file(trainer_states):
-        trainer.load_states(trainer_states)
-        logging.info("Loading training states from : {}".format(trainer_states))
+    if args.continue_exprm:
+        load_model()
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
