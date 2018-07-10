@@ -78,7 +78,7 @@ def configuration():
                         help='optimizer in trainer: SGD, Adam, RMSProp, ... ' )
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
-    parser.add_argument('--schedual_rate', type=float, default=0.1,
+    parser.add_argument('--schedual_rate', type=float, default=1,
                         help='schedual_rate update')
     parser.add_argument('--num_experts', type=int, default=15,
                         help='number of experts')
@@ -230,9 +230,9 @@ def train_one_epoch(epoch, cur_lr):
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
 
-            logging.info('| epoch {:3d} ({}/{})%| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} ({:5.2}%)| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
-                epoch, cursor, train_data.shape[0], batch, trainer.learning_rate, seq_len,
+                epoch, cursor / train_data.shape[0], batch, trainer.learning_rate, seq_len,
                 (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
                 math.exp(total_loss)))
 
@@ -266,8 +266,9 @@ if __name__ == "__main__":
         configfile = os.path.join(path, 'config.json')
 
         try: args = data.Config(utils.read_config(configfile,
-                                        {'continue_exprm':args.continue_exprm,
-                                        'predict_only':args.predict_only}))
+                                        {'continue_exprm' : args.continue_exprm,
+                                        'predict_only' : args.predict_only,
+                                        'debug' : args.debug}))
         except FileNotFoundError: raise
 
     else:
@@ -312,8 +313,9 @@ if __name__ == "__main__":
     ###############################################################################
 
     corpus = data.Corpus(args.data, args.debug, args.predict_only)
-    logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens".format(
-                    len(corpus.train), len(corpus.valid), len(corpus.test)))
+    logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens. Around {} batches/epoch".format(
+                    len(corpus.train), len(corpus.valid), len(corpus.test),
+                    len(corpus.train) // (args.batch_size * args.bptt)))
 
     eval_batch_size = 4 * len(ctxs)
     test_batch_size = 1 * len(ctxs)
@@ -373,13 +375,15 @@ if __name__ == "__main__":
 
     parameters = model.collect_params().values()
     # At any point you can hit Ctrl + C to break out of training early.
+    logging.info(model.summary(nd.zeros((args.bptt, m))))
+    logging.info('Parameters (except embeding): {}'.format(sum(p.data(c).size for c in ctxs for p in parameters)))
+
     try:
         if not args.predict_only: train()
     except KeyboardInterrupt:
             logging.info('-' * 89)
             logging.info('Exiting from training early')
     finally:
-        logging.info('Total parameters: {}'.format(sum(p.data(c).size for c in ctxs for p in parameters)))
         if not args.debug:
             logging.info('Start evaluation on test_data')
             predict()
