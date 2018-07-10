@@ -116,8 +116,8 @@ def evaluate(data_source, batch_size):
 
         for i, X in enumerate(Xs):
             # By default, MXNet is in predict_mode
-            output, states[i] = model(X, states[i]) # state(num_layers, bsz, hidden_size)
-            costs[i]= loss(output, Ys[i]).mean()  # loss (m,)
+            output, states[i], _, _ = model(X, states[i]) # state(num_layers, bsz, hidden_size)
+            costs[i] = loss(output, Ys[i]).mean()  # loss (m,)
 
         costs_cpu = [0] * len(ctxs)
         for i, c in enumerate(costs):
@@ -208,7 +208,7 @@ def train_one_epoch(epoch, cur_lr):
         LOSS = 0
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
-                 output, states[i], encoded_raw, encoded_dropped = model(X, states[i], True) # state(num_layers, bsz, hidden_size)
+                 output, states[i], encoded_raw, encoded_dropped = model(X, states[i]) # state(num_layers, bsz, hidden_size)
                  device_loss = joint_loss(output, Ys[i], encoded_raw, encoded_dropped)
                  LOSS = LOSS + device_loss.as_in_context(ctxs[0]) / X.size
                  loss_list.append(device_loss / X.size)

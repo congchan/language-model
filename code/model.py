@@ -155,7 +155,7 @@ class MOSRNN(Block):
     def begin_state(self, *args, **kwargs):
         return [c.begin_state(*args, **kwargs) for c in self.encoder]
 
-    def forward(self, inputs, begin_state=None, return_h=False, return_prob=False):
+    def forward(self, inputs, begin_state=None, return_prob=False):
         """Implement forward computation.
 
         Parameters
@@ -205,6 +205,5 @@ class MOSRNN(Block):
 
         out = out.reshape(inputs.shape[0], -1, self._vocab_size)
 
-        if return_h:
-            return out, out_states, encoded_raw, encoded_dropped
-        return out, out_states
+        return out, out_states, encoded_raw, encoded_dropped
+
