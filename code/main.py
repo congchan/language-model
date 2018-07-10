@@ -272,7 +272,7 @@ if __name__ == "__main__":
 
     else:
         # By default, use argparse for configuration
-        if args.tied and (args.model == 'RNN' or args.model == 'StandardRNN'):
+        if args.tied and args.model == 'StandardRNN':
             args.hid_size = args.emb_size
         args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
         if args.debug: args.log_interval = 2
@@ -351,7 +351,9 @@ if __name__ == "__main__":
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
                      drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
     elif args.model == 'RNN':
-        model = model.RNN(vocab_size, args)
+        model = model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
+                     tie_weights=args.tied, dropout=args.dropout, weight_drop=0,
+                     drop_h=0, drop_i=0, drop_e=0)
     elif args.model == 'StandardRNN':
         model = gluonnlp.model.StandardRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size,
                                         args.num_layers, dropout=args.dropout, tie_weights=args.tied)
