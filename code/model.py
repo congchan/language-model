@@ -68,8 +68,8 @@ class MOSRNN(Block):
         with self.name_scope():
             self.embedding = self._get_embedding()
             self.encoder = self._get_encoder()
-            self.prior = nn.Dense(num_experts, use_bias=False, flatten=False) # num_experts as output size, in_units will be inferred as last hid size
-            self.latent = nn.Dense(num_experts * embed_size, 'tanh', flatten=False)
+            self.prior = self._get_prior()
+            self.latent = self._get_latent()
             self.decoder = self._get_decoder()
 
     def _get_embedding(self):
@@ -93,6 +93,20 @@ class MOSRNN(Block):
                                            l != self._num_layers - 1 else self._hidden_size_last,
                                            0, self._weight_drop))
         return encoder
+
+    def _get_prior(self):
+        # num_experts as output size, in_units will be inferred as last hid size
+        prior = nn.HybridSequential()
+        with prior.name_scope():
+            prior.add(nn.Dense(self._num_experts, use_bias=False, flatten=False))
+        return prior
+
+    def _get_latent(self):
+        latent = nn.HybridSequential()
+        with latent.name_scope():
+            latent.add(nn.Dense(self._num_experts * self._embed_size, 'tanh', flatten=False))
+        return latent
+
 
     def _get_decoder(self):
         output = nn.HybridSequential()
