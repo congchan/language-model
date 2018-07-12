@@ -205,14 +205,13 @@ def train_one_epoch(epoch, cur_lr):
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
         states = detach(states)
         loss_list = []
-        LOSS = 0
         for i, X in enumerate(Xs):
             with autograd.record(): # train_mode
                  output, states[i], encoded_raw, encoded_dropped = model(X, states[i]) # state(num_layers, bsz, hidden_size)
                  device_loss = joint_loss(output, Ys[i], encoded_raw, encoded_dropped)
-                 LOSS = LOSS + device_loss.as_in_context(ctxs[0]) / X.size
-                 loss_list.append(device_loss / X.size)
-        LOSS.backward()
+                 loss_list.append(device_loss.as_in_context(ctxs[0]) / X.size)
+        for l in loss_list:
+            l.backward()
 
         grads = [p.grad(ctx) for ctx in ctxs for p in parameters]
         gluon.utils.clip_global_norm(grads, args.clipping_theta)
@@ -232,7 +231,7 @@ def train_one_epoch(epoch, cur_lr):
 
             logging.info('| epoch {:3d} ({:5.2}%)| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
-                epoch, cursor / train_data.shape[0], batch, trainer.learning_rate, seq_len,
+                epoch, cursor / train_data.shape[0] * 100, batch, trainer.learning_rate, seq_len,
                 (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
                 math.exp(total_loss)))
 
