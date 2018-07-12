@@ -229,7 +229,7 @@ def train_one_epoch(epoch, cur_lr):
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
 
-            logging.info('| epoch {:3d} ({:5.2}%)| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
+            logging.info('| epoch {:3d} ({:3.2}%)| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
                     'loss {:5.3f} | ppl {:5.2f}'.format(
                 epoch, cursor / train_data.shape[0] * 100, batch, trainer.learning_rate, seq_len,
                 (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
@@ -378,9 +378,9 @@ if __name__ == "__main__":
         load_model()
 
     parameters = model.collect_params().values()
+    parameters_count = 0
     # At any point you can hit Ctrl + C to break out of training early.
-    logging.info(model.summary(nd.zeros((args.bptt, m))))
-    logging.info('Parameters (except embeding): {}'.format(sum(p.data(c).size for c in ctxs for p in parameters)))
+    # logging.info(model.summary(nd.zeros((args.bptt, m))))
 
     try:
         if not args.predict_only: train()
