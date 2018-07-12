@@ -241,6 +241,11 @@ def train_one_epoch(epoch, cur_lr):
         batch += 1
         cursor += seq_len
 
+        global parameters_count
+        if not parameters_count:
+            logging.info('Parameters (except embeding): {}'.format(sum(p.data(ctxs[0]).size for p in parameters)))
+            parameters_count = 1
+
     nd.waitall() # synchronize batch data
     ############################################################################
 
