@@ -4,7 +4,7 @@ import numpy as np
 import data, model, utils
 from JointActivationRegularizationLoss import JointActivationRegularizationLoss
 from mxnet import gluon, nd, init, autograd
-from utils import batchify, get_batch, detach, create_exp_dir, save_checkpoint
+from utils import batchify, get_batch, detach, create_exp_dir
 
 def configuration():
     '''Setting configuration'''
@@ -13,8 +13,8 @@ def configuration():
                         help='continue experiment from a checkpoint')
     parser.add_argument('--data', type=str, default='penn',
                         help='which data corpus: penn, wikitext-2')
-    parser.add_argument('--model', type=str, default='MOS',
-                        help='Model, options (RNN, MOS, StandardRNN, AWDRNN)')
+    parser.add_argument('--model', type=str, default='MOSRNN',
+                        help='Model, options (RNN, MOSRNN, StandardRNN, AWDRNN)')
     parser.add_argument('--exprm', type=str, default='',
                         help='experiment suffix')
     parser.add_argument('--rnn_cell', type=str, default='lstm',
@@ -59,12 +59,12 @@ def configuration():
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
     parser.add_argument('--nonmono', type=int, default=5,
-                        help='random seed')
+                        help='Non-monotonically Triggered interval')
     parser.add_argument('--cpu', action='store_true',
                         help='use cpu only, default not')
     parser.add_argument('--num_gpus', type=int, default=2,
                         help='number of GPUs should be no more than the actual request gpus')
-    parser.add_argument('--log_interval', type=int, default=20, metavar='N',
+    parser.add_argument('--log_interval', type=int, default=0, metavar='N',
                         help='report interval')
     parser.add_argument('--log_freq', type=int, default=5, metavar='N',
                         help='report frequency per epoch')
@@ -107,7 +107,6 @@ def evaluate(data_source, batch_size):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
     costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
     cost_sum = 0
-    n = 0
     states = [model.begin_state(batch_size=batch_size // len(ctxs), ctx=ctx) for ctx in ctxs]
     for cursor in range(0, data_source.shape[0] - 1, args.bptt):
         Xs, Ys = get_batch(data_source, cursor, args)
@@ -135,7 +134,7 @@ def train():
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
-    logging.info('-' * 40 + "Begin training" + '-' * 40)
+    logging.info('-' * 50 + "Begin training" + '-' * 50)
     # Loop over epochs.
     best_loss = float("Inf")
     for epoch in range(args.epochs):
@@ -147,15 +146,16 @@ def train():
         toc = time.time()
         trainer.set_learning_rate(cur_lr)
 
-        logging.info('-' * 89)
-        logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.3f} | '
-                'valid ppl {:8.2f}'.format(epoch, toc - tic, val_loss, math.exp(val_loss)))
-        epoch_info.append([epoch, toc - tic, val_loss, math.exp(val_loss) ])
+        logging.info('-' * 120)
+        logging.info('| end of epoch {:3d} with lr {:2.0f} | time: {:5.2f}s | valid loss {:5.3f} | '
+                'valid ppl {:8.2f}'.format(epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss)))
+        epoch_info.append([epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss) ])
         utils.save_info(epoch_info, epoch_file)
-        logging.info('-' * 89)
+        logging.info('-' * 120)
 
         if val_loss < best_loss:
-            save_checkpoint(model, trainer, path)
+            model.save_params(os.path.join(path, 'model.params'))
+            trainer.save_states(os.path.join(path, 'trainer.states'))
             logging.info('Performance improving, saving Model')
             best_loss = val_loss
         else:
@@ -218,8 +218,9 @@ def train_one_epoch(epoch, cur_lr):
         trainer.step(1)
 
         batch_loss = sum([nd.sum(l).asscalar() for l in loss_list]) / len(ctxs)
-        batch_info.append([epoch, batch, trainer.learning_rate, seq_len,
-                      (time.time() - tic_b) * 1000, batch_loss, math.exp(batch_loss) ])
+        toc_b = time.time()
+        batch_info.append([epoch, batch, trainer.learning_rate, seq_len, (toc_b - tic_b) * 1000,
+                      args.batch_size * seq_len // (toc_b - tic_b), batch_loss, math.exp(batch_loss) ])
 
         total_loss += batch_loss
 
@@ -229,10 +230,11 @@ def train_one_epoch(epoch, cur_lr):
             toc_log_interval = time.time()
             total_loss = total_loss / args.log_interval
 
-            logging.info('| epoch {:3d} ({:3.2}%)| batch {:3d} | lr {:02.4f} | seq_len {:3d} | ms/batch {:5.2f} | '
-                    'loss {:5.3f} | ppl {:5.2f}'.format(
+            logging.info('| epoch {:4d} ({:5.2f}%)| batch {:4d} | lr {:7.4f} | seq_len {:2d} | {:4.0f} ms/batch | '
+                         '{:5d} tokens/s | loss {:6.3f} | ppl {:5.2f}'.format(
                 epoch, cursor / train_data.shape[0] * 100, batch, trainer.learning_rate, seq_len,
-                (toc_log_interval - tic_log_interval) * 1000 / args.log_interval, total_loss,
+                (toc_log_interval - tic_log_interval) * 1000 / args.log_interval,
+                int(args.batch_size * args.log_interval * seq_len / (toc_log_interval - tic_log_interval)), total_loss,
                 math.exp(total_loss)))
 
             total_loss = 0
@@ -279,8 +281,8 @@ if __name__ == "__main__":
         # By default, use argparse for configuration
         if args.tied and args.model == 'StandardRNN':
             args.hid_size = args.emb_size
-        args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
-        if args.debug: args.log_interval = 2
+        if not args.log_interval:
+             args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
         args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
 
@@ -290,20 +292,13 @@ if __name__ == "__main__":
                             logging.FileHandler(os.path.join(path, "log.log"))
                         ])
 
-    # set the header of csv logging files
-    epoch_info = []
-    epoch_file = os.path.join(path, 'epoch_results.csv')
-    utils.save_info(['epoch', 'time/s', 'val_loss', 'perplexity'], epoch_file)
-
-    batch_info = []
-    batch_file = os.path.join(path, 'batch_results.csv')
-    utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'val_loss', 'perplexity'], batch_file)
-
     # config the conputation resources
     if args.cpu:
         ctxs = [mxnet.cpu()]
     else:
         ctxs = utils.try_all_gpus(args.num_gpus)
+    assert args.batch_size % len(ctxs) == 0, \
+    'Total batch size must be multiple of the number of devices'
     m = args.batch_size // len(ctxs)
     logging.info("Split batch samples (batch size={}) to {}, each device loaded {} samples".format(
                 args.batch_size, ctxs, m))
@@ -317,8 +312,10 @@ if __name__ == "__main__":
     ###############################################################################
 
     corpus = data.Corpus(args.data, args.debug, args.predict_only)
-    logging.info("Load {} train_tokens, {} valid_tokens, {} test_tokens. Around {} batches/epoch".format(
-                    len(corpus.train), len(corpus.valid), len(corpus.test),
+    vocab_size = len(corpus.dictionary)
+    logging.info('Load {} train_tokens, {} valid_tokens, {} test_tokens. Vicabulary size {}. '
+                  'Around {} batches/epoch'.format(
+                    len(corpus.train), len(corpus.valid), len(corpus.test), vocab_size,
                     len(corpus.train) // (args.batch_size * args.bptt)))
 
     eval_batch_size = 4 * len(ctxs)
@@ -336,8 +333,6 @@ if __name__ == "__main__":
     '''Model parameters aved path: /train/experiment/model.params.
     If parameters exists, load the saved parameters, else initialize'''
 
-    vocab_size = len(corpus.dictionary)
-
     params = os.path.join(path, 'model.params')
     trainer_states = os.path.join(path, 'trainer.states')
 
@@ -348,11 +343,11 @@ if __name__ == "__main__":
     if args.small_batch_size < 0:
         args.small_batch_size = args.batch_size
 
-    if args.model == 'MOS':
+    if args.model == 'MOSRNN' or args.model == 'MOS':
         model = model.MOSRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.num_layers,
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
                            drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, num_experts=args.num_experts)
-    elif args.model == 'AWDRNN':
+    elif args.model == 'AWDRNN' or args.model == 'AWD' :
         model = gluonnlp.model.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
                      drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
@@ -371,8 +366,17 @@ if __name__ == "__main__":
     joint_loss = JointActivationRegularizationLoss(loss, ar_loss, tar_loss)
 
     model.initialize(init.Xavier(), ctx=ctxs)
-    trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                {'learning_rate': args.lr, 'wd': args.wdecay})
+    if args.optimizer == 'SGD':
+        trainer_params = {'learning_rate': args.lr,
+                      'momentum': 0,
+                      'wd': args.wdecay}
+    elif args.optimizer == 'Adam':
+        trainer_params = {'learning_rate': args.lr,
+                      'wd': args.wdecay,
+                      'beta1': 0,
+                      'beta2': 0.999,
+                      'epsilon': 1e-9}
+    trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 
     if args.continue_exprm:
         load_model()
@@ -383,7 +387,18 @@ if __name__ == "__main__":
     # logging.info(model.summary(nd.zeros((args.bptt, m))))
 
     try:
-        if not args.predict_only: train()
+        if not args.predict_only:
+            # set the header of csv logging files
+            epoch_info = []
+            epoch_file = os.path.join(path, 'epoch_results.csv')
+            utils.save_info(['epoch', 'lr', 'time/s', 'val_loss', 'perplexity'], epoch_file)
+
+            batch_info = []
+            batch_file = os.path.join(path, 'batch_results.csv')
+            utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'val_loss',
+                             'perplexity'], batch_file)
+
+            train()
     except KeyboardInterrupt:
             logging.info('-' * 89)
             logging.info('Exiting from training early')
