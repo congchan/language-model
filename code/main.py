@@ -137,6 +137,8 @@ def train():
     logging.info('-' * 50 + "Begin training" + '-' * 50)
     # Loop over epochs.
     best_loss = float("Inf")
+    not_improves_times = 0
+    best_epoch = 0
     for epoch in range(args.epochs):
 
         cur_lr = trainer.learning_rate
@@ -147,7 +149,7 @@ def train():
         trainer.set_learning_rate(cur_lr)
 
         logging.info('-' * 120)
-        logging.info('| end of epoch {:3d} with lr {:2.0f} | time: {:5.2f}s | valid loss {:5.3f} | '
+        logging.info('| end of epoch {:3d} with lr {:2.4f} | time: {:5.2f}s | valid loss {:5.3f} | '
                 'valid ppl {:8.2f}'.format(epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss)))
         epoch_info.append([epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss) ])
         utils.save_info(epoch_info, epoch_file)
@@ -158,14 +160,23 @@ def train():
             trainer.save_states(os.path.join(path, 'trainer.states'))
             logging.info('Performance improving, saving Model')
             best_loss = val_loss
+            best_epoch = epoch
+            not_improves_times = 0
         else:
-            load_model()
-            logging.info('No improvement, anneal lr to {}'.format(
-                                schedual_lr(cur_lr)))
+            not_improves_times += 1
+            if not_improves_times > 3:
+                not_improves_times = 0
+                load_model()
+                logging.info('No improvement, anneal lr to {:2.4f}, rolling back to epoch {}'.format(
+                                schedual_lr(), best_epoch))
+                epoch_info.append(["roll_back_to", None, None, None, None, best_epoch])
+                batch_info.append(["roll_back_to", best_epoch])
 
-def schedual_lr(cur_lr):
+
+
+def schedual_lr():
     # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
-    lr = args.schedual_rate * cur_lr
+    lr = args.schedual_rate * trainer.learning_rate
     trainer.set_learning_rate(lr)
     return lr
 
@@ -395,8 +406,8 @@ if __name__ == "__main__":
 
             batch_info = []
             batch_file = os.path.join(path, 'batch_results.csv')
-            utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'val_loss',
-                             'perplexity'], batch_file)
+            utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'tokens/s',
+                             'val_loss', 'perplexity'], batch_file)
 
             train()
     except KeyboardInterrupt:
