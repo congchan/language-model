@@ -78,7 +78,7 @@ def configuration():
                         help='optimizer in trainer: SGD, Adam, RMSProp, ... ' )
     parser.add_argument('--wdecay', type=float, default=1.2e-6,
                         help='weight decay applied to all weights')
-    parser.add_argument('--schedual_rate', type=float, default=1,
+    parser.add_argument('--schedual_rate', type=float, default=0,
                         help='schedual_rate update')
     parser.add_argument('--num_experts', type=int, default=15,
                         help='number of experts')
@@ -164,7 +164,7 @@ def train():
             not_improves_times = 0
         else:
             not_improves_times += 1
-            if not_improves_times > 3:
+            if not_improves_times > 3 and args.schedual_rate:
                 not_improves_times = 0
                 load_model()
                 logging.info('No improvement, anneal lr to {:2.4f}, rolling back to epoch {}'.format(
