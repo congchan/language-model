@@ -130,13 +130,13 @@ def evaluate(data_source, batch_size):
 
     return cost_sum.asscalar()
 
-def train():
+def train(best_loss):
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
     logging.info('-' * 50 + "Begin training" + '-' * 50)
     # Loop over epochs.
-    best_loss = float("Inf")
+
     not_improves_times = 0
     best_epoch = 0
     for epoch in range(args.epochs):
@@ -330,7 +330,7 @@ if __name__ == "__main__":
                     len(corpus.train) // (args.batch_size * args.bptt)))
 
     eval_batch_size = 4 * len(ctxs)
-    test_batch_size = 1 * len(ctxs)
+    test_batch_size = 4 * len(ctxs)
 
     if not args.predict_only:
         train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
@@ -389,11 +389,11 @@ if __name__ == "__main__":
                       'epsilon': 1e-9}
     trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 
+    best_loss = float("Inf")
     if args.continue_exprm:
         load_model()
-
-    parameters = model.collect_params().values()
-    parameters_count = 0
+        best_loss = evaluate(val_data, eval_batch_size)
+        logging.info("Laoded model performance: Valid loss {}, ppl {}".format(best_loss, math.exp(best_loss)))
     # At any point you can hit Ctrl + C to break out of training early.
     # logging.info(model.summary(nd.zeros((args.bptt, m))))
 
@@ -402,14 +402,15 @@ if __name__ == "__main__":
             # set the header of csv logging files
             epoch_info = []
             epoch_file = os.path.join(path, 'epoch_results.csv')
-            utils.save_info(['epoch', 'lr', 'time/s', 'val_loss', 'perplexity'], epoch_file)
+            utils.save_info(['epoch', 'lr', 's/epoch', 'val_loss', 'perplexity'], epoch_file)
 
             batch_info = []
             batch_file = os.path.join(path, 'batch_results.csv')
-            utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'time/ms', 'tokens/s',
+            utils.save_info(['epoch', 'batch', 'learning_rate', 'seq_len', 'ms/batch', 'tokens/s',
                              'val_loss', 'perplexity'], batch_file)
-
-            train()
+            parameters = model.collect_params().values()
+            parameters_count = 0
+            train(best_loss)
     except KeyboardInterrupt:
             logging.info('-' * 89)
             logging.info('Exiting from training early')
