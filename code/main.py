@@ -321,11 +321,11 @@ if __name__ == "__main__":
     ###############################################################################
     # Load data
     ###############################################################################
-
+    tic = time.time()
     corpus = data.Corpus(args.data, args.debug, args.predict_only)
     vocab_size = len(corpus.dictionary)
-    logging.info('Load {} train_tokens, {} valid_tokens, {} test_tokens. Vicabulary size {}. '
-                  'Around {} batches/epoch'.format(
+    logging.info('Cost {:5.2f}s to load {} train_tokens, {} valid_tokens, {} test_tokens. Vicabulary size {}. '
+                  'Around {} batches/epoch'.format(time.time() - tic,
                     len(corpus.train), len(corpus.valid), len(corpus.test), vocab_size,
                     len(corpus.train) // (args.batch_size * args.bptt)))
 
@@ -334,7 +334,7 @@ if __name__ == "__main__":
 
     if not args.predict_only:
         train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
-        val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
+    val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
     if not args.debug:
         test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
 
