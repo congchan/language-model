@@ -36,7 +36,7 @@ class Corpus(object):
         self.debug = debug
         self.train = self.tokenize(os.path.join(path, 'train.txt'))
         self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
-        self.test = [] if debug else self.tokenize(os.path.join(path, 'test.txt'))
+        self.test = self.tokenize(os.path.join(path, 'test.txt'))
 
 
     def tokenize(self, path, ctx=None):

@@ -335,8 +335,7 @@ if __name__ == "__main__":
     if not args.predict_only:
         train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
     val_data = batchify(corpus.valid, eval_batch_size).as_in_context(ctxs[0])
-    if not args.debug:
-        test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
+    test_data = batchify(corpus.test, test_batch_size).as_in_context(ctxs[0])
 
     ###############################################################################
     # Build the model
@@ -415,6 +414,5 @@ if __name__ == "__main__":
             logging.info('-' * 89)
             logging.info('Exiting from training early')
     finally:
-        if not args.debug:
-            logging.info('Start evaluation on test_data')
-            predict()
+        logging.info('Start evaluation on test_data')
+        predict()
