@@ -97,38 +97,29 @@ def configuration():
 
 def predict():
     ''' Evalute on test data'''
-    test_loss = evaluate(test_data, test_batch_size)
+    test_loss, test_time = evaluate(test_data, test_batch_size)
     logging.info('-' * 89)
-    logging.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-        test_loss, math.exp(test_loss)))
+    logging.info('| End of training | test time {:5.2f} | test loss {:5.2f} | test ppl {:8.2f}'.format(
+                  test_time, test_loss, math.exp(test_loss)))
     logging.info('-' * 89)
+
 
 def evaluate(data_source, batch_size):
     '''https://mxnet.incubator.apache.org/api/python/autograd/autograd.html#train-mode-and-predict-mode'''
-    costs = [nd.array([0], ctx=ctx) for ctx in ctxs]
-    cost_sum = 0
-    states = [model.begin_state(batch_size=batch_size // len(ctxs), ctx=ctx) for ctx in ctxs]
+    tic = time.time()
+    total_loss = 0
+    N = 0
+    states = model.begin_state(batch_size, ctx=ctxs[0])
     for cursor in range(0, data_source.shape[0] - 1, args.bptt):
         Xs, Ys = get_batch(data_source, cursor, args)
-        Xs = gluon.utils.split_and_load(Xs, ctxs, 1)
-        Ys = gluon.utils.split_and_load(Ys, ctxs, 1)
-
-        for i, X in enumerate(Xs):
-            # By default, MXNet is in predict_mode
-            output, states[i], _, _ = model(X, states[i]) # state(num_layers, bsz, hidden_size)
-            costs[i] = loss(output, Ys[i]).mean()  # loss (m,)
-
-        costs_cpu = [0] * len(ctxs)
-        for i, c in enumerate(costs):
-            costs_cpu[i] = c.as_in_context(mxnet.cpu())
-
-        cost_sum = sum(costs_cpu)/len(costs_cpu)
-
+        # By default, MXNet is in predict_mode
+        output, states, _, _ = model(Xs, states) # state(num_layers, bsz, hidden_size)
         states = detach(states)
+        total_loss += nd.sum(batch_size * loss(output, Ys)).asscalar() # loss (seq_len,)
+        N += batch_size * len(output)
 
-        nd.waitall()
+    return (total_loss / N), time.time() - tic
 
-    return cost_sum.asscalar()
 
 def train(best_loss):
     '''If gluon trainer recognizes multi-devices,
@@ -144,14 +135,15 @@ def train(best_loss):
         cur_lr = trainer.learning_rate
         tic = time.time()
         train_one_epoch(epoch, cur_lr)
-        val_loss = evaluate(val_data, eval_batch_size)
+        val_loss, val_time = evaluate(val_data, eval_batch_size)
         toc = time.time()
         trainer.set_learning_rate(cur_lr)
 
         logging.info('-' * 120)
-        logging.info('| end of epoch {:3d} with lr {:2.4f} | time: {:5.2f}s | valid loss {:5.3f} | '
-                'valid ppl {:8.2f}'.format(epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss)))
-        epoch_info.append([epoch, cur_lr, toc - tic, val_loss, math.exp(val_loss) ])
+        logging.info('| end of epoch {:3d} with lr {:2.4f} | train time: {:5.2f}s | val time: {:5.2f}s | '
+                     ' valid loss {:5.3f} | valid ppl {:8.2f}'.format(
+                                      epoch, cur_lr, toc - tic, val_time, val_loss, math.exp(val_loss)))
+        epoch_info.append([epoch, cur_lr, toc - tic, val_time, val_loss, math.exp(val_loss) ])
         utils.save_info(epoch_info, epoch_file)
         logging.info('-' * 120)
 
@@ -169,7 +161,7 @@ def train(best_loss):
                 load_model()
                 logging.info('No improvement, anneal lr to {:2.4f}, rolling back to epoch {}'.format(
                                 schedual_lr(), best_epoch))
-                epoch_info.append(["roll_back_to", None, None, None, None, best_epoch])
+                epoch_info.append(["roll_back_to", None, None, None, None, None, best_epoch])
                 batch_info.append(["roll_back_to", best_epoch])
 
 
@@ -329,8 +321,8 @@ if __name__ == "__main__":
                     len(corpus.train), len(corpus.valid), len(corpus.test), vocab_size,
                     len(corpus.train) // (args.batch_size * args.bptt)))
 
-    eval_batch_size = 4 * len(ctxs)
-    test_batch_size = 4 * len(ctxs)
+    eval_batch_size = 10
+    test_batch_size = 1
 
     if not args.predict_only:
         train_data = batchify(corpus.train, args.batch_size).as_in_context(ctxs[0])
@@ -391,8 +383,8 @@ if __name__ == "__main__":
     best_loss = float("Inf")
     if args.continue_exprm:
         load_model()
-        best_loss = evaluate(val_data, eval_batch_size)
-        logging.info("Laoded model performance: Valid loss {}, ppl {}".format(best_loss, math.exp(best_loss)))
+        best_loss, val_time = evaluate(val_data, eval_batch_size)
+        logging.info("Loaded model performance: val_time {:5.2f}, valid loss {}, ppl {}".format(val_time, best_loss, math.exp(best_loss)))
     # At any point you can hit Ctrl + C to break out of training early.
     # logging.info(model.summary(nd.zeros((args.bptt, m))))
 
@@ -401,7 +393,7 @@ if __name__ == "__main__":
             # set the header of csv logging files
             epoch_info = []
             epoch_file = os.path.join(path, 'epoch_results.csv')
-            utils.save_info(['epoch', 'lr', 's/epoch', 'val_loss', 'perplexity'], epoch_file)
+            utils.save_info(['epoch', 'lr', 'train_time(s)', 'val_time(s)', 'val_loss', 'perplexity'], epoch_file)
 
             batch_info = []
             batch_file = os.path.join(path, 'batch_results.csv')
