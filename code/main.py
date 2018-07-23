@@ -284,8 +284,6 @@ if __name__ == "__main__":
         # By default, use argparse for configuration
         if args.tied and args.model == 'StandardRNN':
             args.hid_size = args.emb_size
-        if not args.log_interval:
-             args.log_interval = 929589 // (args.batch_size * args.bptt) // args.log_freq
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
         args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
 
@@ -321,7 +319,10 @@ if __name__ == "__main__":
                     len(corpus.train), len(corpus.valid), len(corpus.test), vocab_size,
                     len(corpus.train) // (args.batch_size * args.bptt)))
 
-    eval_batch_size = 10
+    if not args.log_interval:
+         args.log_interval = len(corpus.train) // (args.batch_size * args.bptt) // args.log_freq
+
+    eval_batch_size = 10 if args.data == 'penn' else m
     test_batch_size = 1
 
     if not args.predict_only:
