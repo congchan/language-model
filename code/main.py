@@ -350,11 +350,18 @@ if __name__ == "__main__":
                            tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop, drop_h=args.drop_h,
                            drop_i=args.drop_i, drop_e=args.drop_e, drop_l=args.drop_l, num_experts=args.num_experts)
     elif args.model == 'AWDRNN' or args.model == 'AWD' :
+        ''' AWDRNN model from gluonnlp (actually w/o asgd), not support (emb_size != last_hid_size)'''
         model = gluonnlp.model.train.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
                      drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
+    elif args.model == 'WDRNN' or args.model == 'WD' :
+        ''' Weight-decay RNN (w/o asgd), support (emb_size != last_hid_size), but with an extra dense layer '''
+        model = model.WDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.num_layers,
+                     tie_weights=args.tied, dropout=args.dropout, weight_drop=args.w_drop,
+                     drop_h=args.drop_h, drop_i=args.drop_i, drop_e=args.drop_e)
     elif args.model == 'RNN':
-        model = gluonnlp.model.train.AWDRNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.num_layers,
+        ''' RNN , support (emb_size != last_hid_size), but with an extra dense layer '''
+        model = model.RNN(args.rnn_cell, vocab_size, args.emb_size, args.hid_size, args.last_hid_size, args.num_layers,
                      tie_weights=args.tied, dropout=args.dropout, weight_drop=0,
                      drop_h=0, drop_i=0, drop_e=0)
     elif args.model == 'StandardRNN':

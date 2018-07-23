@@ -174,9 +174,9 @@ class MOSRNN(Block):
         return out, out_states, encoded_raw, encoded_dropped
 
 
-class AWDRNN(Block):
-    """AWD language model by salesforce.
-    Reference: https://github.com/salesforce/awd-lstm-lm
+class WDRNN(Block):
+    """AWD language model (w/o asgd). Support (emb_size != last_hid_size), but with an extra dense layer
+    Reference: https://github.com/salesforce/awd-lstm-lm by salesforce.
     License: BSD 3-Clause
     Parameters
     ----------
@@ -203,14 +203,15 @@ class AWDRNN(Block):
     drop_e : float
         Dropout rate to use on the embedding layer.
     """
-    def __init__(self, mode, vocab_size, embed_size=400, hidden_size=1150, num_layers=3,
+    def __init__(self, mode, vocab_size, embed_size=400, hidden_size=1150, hidden_size_last=620, num_layers=3,
                  tie_weights=True, dropout=0.4, weight_drop=0.5, drop_h=0.2,
                  drop_i=0.65, drop_e=0.1, **kwargs):
-        super(AWDRNN, self).__init__(**kwargs)
+        super(WDRNN, self).__init__(**kwargs)
         self._mode = mode
         self._vocab_size = vocab_size
         self._embed_size = embed_size
         self._hidden_size = hidden_size
+        self._hidden_size_last = hidden_size_last
         self._num_layers = num_layers
         self._dropout = dropout
         self._drop_h = drop_h
@@ -242,15 +243,130 @@ class AWDRNN(Block):
             for l in range(self._num_layers):
                 encoder.add(_get_rnn_layer(self._mode, 1, self._embed_size if l == 0 else
                                            self._hidden_size, self._hidden_size if
-                                           l != self._num_layers - 1 or not self._tie_weights
-                                           else self._embed_size, 0, self._weight_drop))
-
+                                           l != self._num_layers - 1 else self._hidden_size_last,
+                                           0, self._weight_drop))
         return encoder
 
     def _get_decoder(self):
         output = nn.HybridSequential()
         with output.name_scope():
             if self._tie_weights:
+                if self._hidden_size_last != self._embed_size:
+                    output.add(nn.Dense(self._embed_size, 'tanh', flatten=False))
+                output.add(nn.Dense(self._vocab_size, flatten=False,
+                                    params=self.embedding[0].params))
+            else:
+                output.add(nn.Dense(self._vocab_size, flatten=False))
+        return output
+
+    def begin_state(self, *args, **kwargs):
+        return [c.begin_state(*args, **kwargs) for c in self.encoder]
+
+    def state_info(self, *args, **kwargs):
+        return [c.state_info(*args, **kwargs) for c in self.encoder]
+
+    def forward(self, inputs, begin_state=None): # pylint: disable=arguments-differ
+        """Implement the forward computation that the awd language model and cache model use.
+        Parameters
+        -----------
+        inputs : NDArray
+                input tensor with shape `(sequence_length, batch_size)`
+            when `layout` is "TNC".
+        begin_state : list
+            initial recurrent state tensor with length equals to num_layers.
+            the initial state with shape `(1, batch_size, num_hidden)`
+        Returns
+        --------
+        out: NDArray
+            output tensor with shape `(sequence_length, batch_size, input_size)`
+            when `layout` is "TNC".
+        out_states: list
+            output recurrent state tensor with length equals to num_layers.
+            the state with shape `(1, batch_size, num_hidden)`
+        encoded_raw: list
+            The list of outputs of the model's encoder with length equals to num_layers.
+            the shape of every encoder's output `(sequence_length, batch_size, num_hidden)`
+        encoded_dropped: list
+            The list of outputs with dropout of the model's encoder with length equals
+            to num_layers. The shape of every encoder's dropped output
+            `(sequence_length, batch_size, num_hidden)`
+        """
+        encoded = self.embedding(inputs)
+        if not begin_state:
+            begin_state = self.begin_state(batch_size=inputs.shape[1])
+        out_states = []
+        encoded_raw = []
+        encoded_dropped = []
+        for i, (e, s) in enumerate(zip(self.encoder, begin_state)):
+            encoded, state = e(encoded, s)
+            encoded_raw.append(encoded)
+            out_states.append(state)
+            if self._drop_h and i != len(self.encoder) - 1:
+                encoded = nd.Dropout(encoded, p=self._drop_h, axes=(0,))
+                encoded_dropped.append(encoded)
+        if self._dropout:
+            encoded = nd.Dropout(encoded, p=self._dropout, axes=(0,))
+        encoded_dropped.append(encoded)
+        with autograd.predict_mode():
+            out = self.decoder(encoded)
+
+        return out, out_states, encoded_raw, encoded_dropped
+
+class RNN(gluon.Block):
+    ''' Vanilla multi-layers RNN with an extra dense layer, modified from
+    https://zh.gluon.ai/chapter_recurrent-neural-networks/rnn-gluon.html'''
+
+    def __init__(self, mode, vocab_size, embed_size=400, hidden_size=1150, hidden_size_last=280, num_layers=3,
+                 tie_weights=True, dropout=0.4, weight_drop=0, drop_h=0,
+                 drop_i=0, drop_e=0, **kwargs):
+        super(RNN, self).__init__(**kwargs)
+        self._mode = mode
+        self._vocab_size = vocab_size
+        self._embed_size = embed_size
+        self._hidden_size = hidden_size
+        self._hidden_size_last = hidden_size_last
+        self._num_layers = num_layers
+        self._dropout = dropout
+        self._drop_h = drop_h
+        self._drop_i = drop_i
+        self._drop_e = drop_e
+        self._weight_drop = weight_drop
+        self._tie_weights = tie_weights
+
+        with self.name_scope():
+            self.embedding = self._get_embedding()
+            self.encoder = self._get_encoder()
+            self.decoder = self._get_decoder()
+
+
+    def _get_embedding(self):
+        embedding = nn.HybridSequential()
+        with embedding.name_scope():
+            embedding_block = nn.Embedding(self._vocab_size, self._embed_size,
+                                           weight_initializer=init.Uniform(0.1))
+            if self._drop_e:
+                apply_weight_drop(embedding_block, 'weight', self._drop_e, axes=(1,))
+            embedding.add(embedding_block)
+            if self._drop_i:
+                embedding.add(nn.Dropout(self._drop_i, axes=(0,)))
+        return embedding
+
+    def _get_encoder(self):
+        encoder = nn.Sequential()
+        with encoder.name_scope():
+            for l in range(self._num_layers):
+                encoder.add(_get_rnn_layer(self._mode, 1, self._embed_size if l == 0 else
+                                           self._hidden_size, self._hidden_size if
+                                           l != self._num_layers - 1 else self._hidden_size_last,
+                                           0, self._weight_drop))
+        return encoder
+
+    def _get_decoder(self):
+        output = nn.HybridSequential()
+        with output.name_scope():
+            if self._tie_weights:
+                if self._hidden_size_last != self._embed_size:
+                    output.add(nn.Dense(self._embed_size, 'tanh', flatten=False))
                 output.add(nn.Dense(self._vocab_size, flatten=False,
                                     params=self.embedding[0].params))
             else:
