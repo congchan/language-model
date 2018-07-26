@@ -160,12 +160,11 @@ class MOSRNN(Block):
         logit = self.decoder(latent.reshape(-1, self._embed_size))
         prior_logit = self.prior(encoded).reshape(-1, self._num_experts)
         prior = nd.softmax(prior_logit)
-
-        prob = logit.reshape(-1, self._vocab_size)
-        prob = prob.reshape(-1, self._num_experts, self._vocab_size)
-        prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
         
-        out = prob.reshape(inputs.shape[0], -1, self._vocab_size)
+        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._num_experts, self._vocab_size)
+        prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
+
+        out = nd.log(nd.add(prob, 1e-8)).reshape(inputs.shape[0], -1, self._vocab_size)
 
         return out, out_states, encoded_raw, encoded_dropped
 

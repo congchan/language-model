@@ -370,7 +370,7 @@ if __name__ == "__main__":
                                         args.num_layers, dropout=args.dropout, tie_weights=args.tied)
 
 
-    loss = gluon.loss.SoftmaxCrossEntropyLoss()
+    loss = gluon.loss.SoftmaxCrossEntropyLoss(from_logits=True)
     ar_loss = gluonnlp.loss.ActivationRegularizationLoss(args.alpha)
     tar_loss = gluonnlp.loss.TemporalActivationRegularizationLoss(args.beta)
     joint_loss = JointActivationRegularizationLoss(loss, ar_loss, tar_loss)
