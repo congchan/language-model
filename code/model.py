@@ -121,7 +121,7 @@ class MOSRNN(Block):
     def begin_state(self, *args, **kwargs):
         return [c.begin_state(*args, **kwargs) for c in self.encoder]
 
-    def forward(self, inputs, begin_state=None, return_prob=False):
+    def forward(self, inputs, begin_state=None):
         """Implement forward computation.
 
         Parameters
@@ -160,16 +160,12 @@ class MOSRNN(Block):
         logit = self.decoder(latent.reshape(-1, self._embed_size))
         prior_logit = self.prior(encoded).reshape(-1, self._num_experts)
         prior = nd.softmax(prior_logit)
-        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._num_experts, self._vocab_size)
+
+        prob = logit.reshape(-1, self._vocab_size)
+        prob = prob.reshape(-1, self._num_experts, self._vocab_size)
         prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
-
-        if return_prob:
-            out = prob
-        else:
-            log_prob = nd.log(nd.add(prob, 1e-8))
-            out = log_prob
-
-        out = out.reshape(inputs.shape[0], -1, self._vocab_size)
+        
+        out = prob.reshape(inputs.shape[0], -1, self._vocab_size)
 
         return out, out_states, encoded_raw, encoded_dropped
 
