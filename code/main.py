@@ -40,15 +40,15 @@ def configuration():
                         help='sequence length')
     parser.add_argument('--debug', type=int, default=0,
                         help='debug mode sepcify the tokenize length for faster debugging')
-    parser.add_argument('--dropout', type=float, default=0.2,
+    parser.add_argument('--dropout', type=float, default=0.4,
                         help='dropout applied to layers (0 = no dropout)')
-    parser.add_argument('--drop_h', type=float, default=0.3,
+    parser.add_argument('--drop_h', type=float, default=0.225,
                         help='dropout for rnn layers (0 = no dropout), context vector V-drop 0.3')
-    parser.add_argument('--drop_i', type=float, default=0.55,
+    parser.add_argument('--drop_i', type=float, default=0.4,
                         help='dropout for input embedding layers (0 = no dropout), emb V-drop 0.55')
     parser.add_argument('--drop_e', type=float, default=0.1,
                         help='dropout to remove words from embedding layer (0 = no dropout), word level V-drop 0.1')
-    parser.add_argument('--drop_l', type=float, default=-0.2,
+    parser.add_argument('--drop_l', type=float, default=-0.29,
                         help='dropout applied to latent layers (0 = no dropout)')
     parser.add_argument('--w_drop', type=float, default=0.5,
                         help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
