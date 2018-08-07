@@ -48,7 +48,7 @@ def configuration():
                         help='dropout for input embedding layers (0 = no dropout), emb V-drop 0.55')
     parser.add_argument('--drop_e', type=float, default=0.1,
                         help='dropout to remove words from embedding layer (0 = no dropout), word level V-drop 0.1')
-    parser.add_argument('--drop_l', type=float, default=-0.29,
+    parser.add_argument('--drop_l', type=float, default=0.29,
                         help='dropout applied to latent layers (0 = no dropout)')
     parser.add_argument('--w_drop', type=float, default=0.5,
                         help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
@@ -90,6 +90,8 @@ def configuration():
                         help='max sequence length')
     parser.add_argument('--single_gpu', default=False, action='store_true',
                         help='use single GPU')
+    parser.add_argument('--early_stop', type=int, default=4,
+                        help='number of no improtment epoch to trigger early stop')
 
     args = parser.parse_args()
 
@@ -121,16 +123,16 @@ def evaluate(data_source, batch_size):
     return (total_loss / N), time.time() - tic
 
 
-def train(best_loss):
+def train(load_best_loss):
     '''If gluon trainer recognizes multi-devices,
     it will automatically aggregate the gradients and synchronize the parameters.'''
 
     logging.info('-' * 50 + "Begin training" + '-' * 50)
     # Loop over epochs.
-
+    best_loss = float("Inf")
     not_improves_times = 0
     best_epoch = 0
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
 
         cur_lr = trainer.learning_rate
         tic = time.time()
@@ -147,31 +149,34 @@ def train(best_loss):
         utils.save_info(epoch_info, epoch_file)
         logging.info('-' * 120)
 
+        ''' If no pre-trained model loaded, the load_best_loss is float("Inf"),
+                then any improvment will be saved, and update the load_best_loss
+            if loaded from pre-trained model, there is valid real value load_best_loss
+                But still need val_loss to help find a good downward direction along the loss surface,
+        '''
         if val_loss < best_loss:
-            model.save_params(os.path.join(path, 'model.params'))
-            trainer.save_states(os.path.join(path, 'trainer.states'))
-            logging.info('Performance improving, saving Model')
+            if val_loss < load_best_loss:
+                load_best_loss = val_loss
+                model.save_parameters(os.path.join(path, 'model.params'))
+                utils.read_kvstore(trainingfile, update={'lr': cur_lr})
+                logging.info('Performance improving; Save the best model!')
+            else:
+                logging.info('Performance improving, but not the best one.')
             best_loss = val_loss
             best_epoch = epoch
             not_improves_times = 0
         else:
             not_improves_times += 1
-            if not_improves_times > 3 and args.schedual_rate:
+            if not_improves_times == args.early_stop and args.schedual_rate:
                 not_improves_times = 0
                 load_model()
+                new_lr = args.schedual_rate * cur_lr
+                trainer.set_learning_rate(new_lr)
                 logging.info('No improvement, anneal lr to {:2.4f}, rolling back to epoch {}'.format(
-                                schedual_lr(), best_epoch))
+                                new_lr, best_epoch))
                 epoch_info.append(["roll_back_to", None, None, None, None, None, best_epoch])
                 batch_info.append(["roll_back_to", best_epoch])
-
-
-
-def schedual_lr():
-    # trainer.set_learning_rate(args.lr * seq_len / args.bptt)
-    lr = args.schedual_rate * trainer.learning_rate
-    trainer.set_learning_rate(lr)
-    return lr
-
+        utils.read_kvstore(trainingfile, update={'epoch': epoch})
 
 def train_one_epoch(epoch, cur_lr):
     ''' Train all the batches within one epoch.
@@ -208,17 +213,26 @@ def train_one_epoch(epoch, cur_lr):
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
         states = detach(states)
         loss_list = []
-        for i, X in enumerate(Xs):
-            with autograd.record(): # train_mode
+        with autograd.record(): # train_mode
+            for i, X in enumerate(Xs):
                  output, states[i], encoded_raw, encoded_dropped = model(X, states[i]) # state(num_layers, bsz, hidden_size)
                  device_loss = joint_loss(output, Ys[i], encoded_raw, encoded_dropped)
                  loss_list.append(device_loss.as_in_context(ctxs[0]) / X.size)
         for l in loss_list:
             l.backward()
 
+        ''' trainer.allreduce_grads()
+            For each parameter, reduce the gradients from different contexts.
+            Should be called after autograd.backward(), outside of record() scope, and before trainer.update().
+            For normal parameter updates, step() should be used, which internally calls allreduce_grads() and then update().
+            However, in gradient clipping, manually call allreduce_grads() and update() separately.
+        '''
+        # trainer.allreduce_grads()
+        # grads = [p.grad(ctxs[0]) for p in parameters]
         grads = [p.grad(ctx) for ctx in ctxs for p in parameters]
         gluon.utils.clip_global_norm(grads, args.clipping_theta)
         trainer.step(1)
+        # trainer.update(1)
 
         batch_loss = sum([nd.sum(l).asscalar() for l in loss_list]) / len(ctxs)
         toc_b = time.time()
@@ -254,14 +268,15 @@ def train_one_epoch(epoch, cur_lr):
     nd.waitall() # synchronize batch data
     ############################################################################
 
-def load_model():
+def load_model(load_states=True):
     if utils.check_file(params):
         model.load_params(params, ctx=ctxs)
         logging.info("Loading parameters from : {}".format(params))
 
-    if utils.check_file(trainer_states):
-        trainer.load_states(trainer_states)
-        logging.info("Loading training states from : {}".format(trainer_states))
+    if load_states and utils.check_file(trainingfile):
+        trainer.set_learning_rate(float(utils.read_kvstore(trainingfile)['lr']))
+        logging.info("Loading lr from : {}".format(trainingfile))
+
 
 
 if __name__ == "__main__":
@@ -269,15 +284,27 @@ if __name__ == "__main__":
     # prepare configuration, files for saving data and logging information
     ###############################################################################
     args = configuration()
-
+    ''' If continue training a pre-trained model,
+        the lr and start epoch is read from the trainingfile
+    '''
     if args.continue_exprm:
         path = utils.make_dir([args.save, args.continue_exprm])
         configfile = os.path.join(path, 'config.json')
+        trainingfile = os.path.join(path, 'training.json')
+        if not utils.check_file(trainingfile):
+            utils.save_kvstore({'epoch' : 0, 'lr' : args.lr}, trainingfile)
+            logging.info("trainingfile not found, create a new one.")
 
-        try: args = data.Config(utils.read_config(configfile,
+        try:
+            args = data.Config(utils.read_kvstore(configfile,
                                         {'continue_exprm' : args.continue_exprm,
                                         'predict_only' : args.predict_only,
+                                        'seed' : args.seed,
+                                        'early_stop' : args.early_stop,
                                         'debug' : args.debug}))
+            training_states = utils.read_kvstore(trainingfile)
+            args.lr = float(training_states['lr'])
+            start_epoch = training_states['epoch'] + 1
         except FileNotFoundError: raise
 
     else:
@@ -285,7 +312,10 @@ if __name__ == "__main__":
         if args.tied and args.model == 'StandardRNN':
             args.hid_size = args.emb_size
         path = utils.make_dir([args.save, args.model+'-'+args.rnn_cell+args.exprm])
-        args = data.Config(utils.save_config(vars(args), os.path.join(path, 'config.json')))
+        args = data.Config(utils.save_kvstore(vars(args), os.path.join(path, 'config.json')))
+        start_epoch = 0
+        trainingfile = os.path.join(path, 'training.json')
+        utils.save_kvstore({'epoch' : 0, 'lr' : args.lr}, trainingfile)
 
     logging.basicConfig(level=logging.INFO,
                         handlers = [
@@ -305,8 +335,9 @@ if __name__ == "__main__":
                 args.batch_size, ctxs, m))
 
     # Set the random seed manually for reproducibility.
-    np.random.seed(args.seed)
-    mxnet.random.seed(args.seed)
+    if args.seed:
+        np.random.seed(args.seed)
+        mxnet.random.seed(args.seed)
 
     ###############################################################################
     # Load data
@@ -337,7 +368,6 @@ if __name__ == "__main__":
     If parameters exists, load the saved parameters, else initialize'''
 
     params = os.path.join(path, 'model.params')
-    trainer_states = os.path.join(path, 'trainer.states')
 
     if args.last_hid_size < 0:
         args.last_hid_size = args.emb_size
@@ -370,12 +400,13 @@ if __name__ == "__main__":
                                         args.num_layers, dropout=args.dropout, tie_weights=args.tied)
 
 
-    loss = gluon.loss.SoftmaxCrossEntropyLoss(from_logits=True)
+    loss = gluon.loss.SoftmaxCrossEntropyLoss()
     ar_loss = gluonnlp.loss.ActivationRegularizationLoss(args.alpha)
     tar_loss = gluonnlp.loss.TemporalActivationRegularizationLoss(args.beta)
     joint_loss = JointActivationRegularizationLoss(loss, ar_loss, tar_loss)
 
     model.initialize(init.Xavier(), ctx=ctxs)
+    model.hybridize()
     if args.optimizer == 'SGD':
         trainer_params = {'learning_rate': args.lr,
                       'momentum': 0,
@@ -388,11 +419,14 @@ if __name__ == "__main__":
                       'epsilon': 1e-9}
     trainer = gluon.Trainer(model.collect_params(), args.optimizer, trainer_params)
 
-    best_loss = float("Inf")
+    load_best_loss = float("Inf")
     if args.continue_exprm:
         load_model()
-        best_loss, val_time = evaluate(val_data, eval_batch_size)
-        logging.info("Loaded model performance: val_time {:5.2f}, valid loss {}, ppl {}".format(val_time, best_loss, math.exp(best_loss)))
+        load_best_loss, val_time = evaluate(val_data, eval_batch_size)
+        load_best_ppl = math.exp(load_best_loss)
+        logging.info("Loaded model: val_time {:5.2f}, valid loss {}, ppl {}\
+                     ".format(val_time, load_best_loss, load_best_ppl))
+
     # At any point you can hit Ctrl + C to break out of training early.
     # logging.info(model.summary(nd.zeros((args.bptt, m))))
 
@@ -409,7 +443,7 @@ if __name__ == "__main__":
                              'val_loss', 'perplexity'], batch_file)
             parameters = model.collect_params().values()
             parameters_count = 0
-            train(best_loss)
+            train(load_best_loss)
     except KeyboardInterrupt:
             logging.info('-' * 89)
             logging.info('Exiting from training early')

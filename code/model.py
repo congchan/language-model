@@ -98,15 +98,16 @@ class MOSRNN(Block):
         # num_experts as output size, in_units will be inferred as last hid size
         prior = nn.HybridSequential()
         with prior.name_scope():
-            prior.add(nn.Dense(self._num_experts, use_bias=False, flatten=False))
+            prior.add(nn.Dense(self._num_experts, in_units=self._hidden_size_last,
+                               use_bias=False, flatten=False))
         return prior
 
     def _get_latent(self):
         latent = nn.HybridSequential()
         with latent.name_scope():
-            latent.add(nn.Dense(self._num_experts * self._embed_size, 'tanh', flatten=False))
+            latent.add(nn.Dense(self._num_experts * self._embed_size, 'tanh',
+                                in_units=self._hidden_size_last, flatten=False))
         return latent
-
 
     def _get_decoder(self):
         output = nn.HybridSequential()
@@ -160,11 +161,11 @@ class MOSRNN(Block):
         logit = self.decoder(latent.reshape(-1, self._embed_size))
         prior_logit = self.prior(encoded).reshape(-1, self._num_experts)
         prior = nd.softmax(prior_logit)
-        
-        prob = nd.softmax(logit.reshape(-1, self._vocab_size)).reshape(-1, self._num_experts, self._vocab_size)
-        prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(1)
 
-        out = nd.log(nd.add(prob, 1e-8)).reshape(inputs.shape[0], -1, self._vocab_size)
+        prob = nd.softmax(logit.reshape(-1, self._vocab_size))
+        prob = prob.reshape(-1, self._num_experts, self._vocab_size)
+        prob = (prob * prior.expand_dims(2).broadcast_to(prob.shape)).sum(axis=1)
+        out = nd.log(nd.add(prob, 1e-8)).reshape(-1, inputs.shape[1], self._vocab_size)
 
         return out, out_states, encoded_raw, encoded_dropped
 

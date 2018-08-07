@@ -73,27 +73,27 @@ def save_checkpoint(model, trainer, path, finetune=False):
         model.save_params(os.path.join(path, 'model.params'))
         trainer.save_states(os.path.join(path, 'trainer.states'))
 
-def save_config(config, file):
-    ''' config: dict '''
+def save_kvstore(kvstore, file):
+    ''' kvstore: dict '''
 
-    with open(file, 'w') as configfile:
-        json.dump(config, configfile)
+    with open(file, 'w') as kvstorefile:
+        json.dump(kvstore, kvstorefile)
 
-    return config
+    return kvstore
 
 
-def read_config(file, update=None):
+def read_kvstore(file, update=None):
     ''' ONLY when continue_exprm.
     update provide {K:V} pair to update'''
-    with open(file, 'r') as configfile:
-        config = json.load(configfile)
-        configfile.close()
+    with open(file, 'r') as kvstorefile:
+        kvstore = json.load(kvstorefile)
+        kvstorefile.close()
 
     if update:
-        config.update(update)
-        save_config(config, file)
+        kvstore.update(update)
+        save_kvstore(kvstore, file)
 
-    return config
+    return kvstore
 
 
 def save_info(results, file):
